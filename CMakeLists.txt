@@ -1,17 +1,18 @@
- #
- # Copyright @ 2019 Audi AG. All rights reserved.
- # 
- #     This Source Code Form is subject to the terms of the Mozilla
- #     Public License, v. 2.0. If a copy of the MPL was not distributed
- #     with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
- # 
- # If it is not possible or desirable to put the notice in a particular file, then
- # You may include the notice in a location (such as a LICENSE file in a
- # relevant directory) where a recipient would be likely to look for such a notice.
- # 
- # You may add additional accurate notices of copyright ownership.
- #
-cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
+#
+# Copyright @ 2021 VW Group. All rights reserved.
+# 
+#     This Source Code Form is subject to the terms of the Mozilla
+#     Public License, v. 2.0. If a copy of the MPL was not distributed
+#     with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+# 
+# If it is not possible or desirable to put the notice in a particular file, then
+# You may include the notice in a location (such as a LICENSE file in a
+# relevant directory) where a recipient would be likely to look for such a notice.
+# 
+# You may add additional accurate notices of copyright ownership.
+# 
+#
+cmake_minimum_required(VERSION 3.17.0 FATAL_ERROR)
 cmake_policy(SET CMP0011 NEW)
 
 # Disable extensions here and require the chosen CMAKE_CXX_STANDARD (coming from Conan)
@@ -25,20 +26,24 @@ elseif(CMAKE_CXX_STANDARD LESS 14)
     message(FATAL_ERROR "CMAKE_CXX_STANDARD >= 14 required")
 endif()
 
-option(fep_base_utilities_cmake_enable_tests "Enable tests - requires googletest (default: ON)" ON) 
+option(fep_base_utilities_cmake_enable_tests "Enable tests - requires googletest (default: ON)" ON)
 
-project(fep_base_utilities-library VERSION 0.1.0)
+file(STRINGS version
+    VERSION
+    LIMIT_COUNT 1
+)
+project(fep_base_utilities-library VERSION ${VERSION})
 
 set(FEP_BASE_UTILITIES_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(FEP_BASE_UTILITIES_VERSION_MINOR ${PROJECT_VERSION_MINOR})
 set(FEP_BASE_UTILITIES_VERSION_PATCH ${PROJECT_VERSION_PATCH})
 set(FEP_BASE_UTILITIES_LIB_BUILD ON)
 
-# Enable strict compiler warnings
+# Enable strict compiler warnings and phtread in linux
 if(WIN32)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /wd4100 /wd4251 /wd4505 /wd4290")
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-unknown-pragmas -Wno-reorder")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-unknown-pragmas -Wno-reorder -pthread")
 endif()
 
 if(CONAN_COMPILER)
@@ -60,7 +65,6 @@ if(CONAN_COMPILER)
     else()
         conan_basic_setup(TARGETS NO_OUTPUT_DIRS)
     endif()
-    set(gtest_search_mode CONFIG)
 endif()
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -90,5 +94,4 @@ install(
         "*.h"
 )
 
-install(FILES doc/extern/changelog.md
-        DESTINATION doc)
+install(FILES doc/extern/changelog.md DESTINATION doc)

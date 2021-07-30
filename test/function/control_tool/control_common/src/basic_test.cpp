@@ -1,102 +1,43 @@
 /**
  * @file
+ * @copyright
+ * @verbatim
+Copyright @ 2021 VW Group. All rights reserved.
 
-   @copyright
-   @verbatim
-   Copyright @ 2019 Audi AG. All rights reserved.
-   
-       This Source Code Form is subject to the terms of the Mozilla
-       Public License, v. 2.0. If a copy of the MPL was not distributed
-       with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
-   
-   If it is not possible or desirable to put the notice in a particular file, then
-   You may include the notice in a location (such as a LICENSE file in a
-   relevant directory) where a recipient would be likely to look for such a notice.
-   
-   You may add additional accurate notices of copyright ownership.
-   @endverbatim
- *
- *
- * @remarks
- *
+    This Source Code Form is subject to the terms of the Mozilla
+    Public License, v. 2.0. If a copy of the MPL was not distributed
+    with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+If it is not possible or desirable to put the notice in a particular file, then
+You may include the notice in a location (such as a LICENSE file in a
+relevant directory) where a recipient would be likely to look for such a notice.
+
+You may add additional accurate notices of copyright ownership.
+
+@endverbatim
  */
-
-#include <unordered_set>
-#include <chrono>
-#include <thread>
-#include "gtest/gtest.h"
-#include <fep_system/fep_system.h>
-#include <boost/process.hpp>
-#include <a_util/strings.h>
-#include <a_util/filesystem.h>
 #include "../../../../../src/fep_control_tool/control_tool_common_helper.h"
-#include <fep3/core.h>
-#include <fep3/core/participant_executor.hpp>
+#include "binary_tool_path.h"
+#include "control_tool_test.h"
 
-#define STR(x) #x
-#define STRINGIZE(x) STR(x)
-namespace
-{
-    const std::string binary_tool_path = STRINGIZE(BINARY_TOOL_PATH);
-}
-#undef STR
-#undef STRINGIZE
-
-namespace bp = boost::process;
-
-inline void skipUntilPrompt(bp::child& c, bp::ipstream& reader_stream)
-{
-    std::string str;
-    for (;;)
-    {
-        ASSERT_TRUE(c.running());
-        reader_stream >> str;
-        if (str == "fep>")
-        {
-            break;
-        }
-    }
-}
-
-const std::unordered_set<std::string> skippables = { "sendto","127.0.0.1:9990", "for", "multicast", "address", "230.230.230.1:9990",
-"failed,", "errno", "=", "A", "socket", "operation", "was", "attempted", "to", "an", "unreachable", "network.", "(10051)" };
-
-inline void checkUntilPrompt(bp::child& c, bp::ipstream& reader_stream, const std::vector<std::string>& expected_answer)
-{
-    std::string str;
-    for (size_t i = 0u; ; ++i)
-    {
-        for (;;)
-        {
-            ASSERT_TRUE(c.running());
-            reader_stream >> str;
-            if (str == "fep>")
-            {
-                EXPECT_EQ(i, expected_answer.size());
-                return;
-            }
-            if ((i == expected_answer.size() || str != expected_answer[i]) && skippables.count(str))
-            {
-                continue;
-            }
-            break;
-        }
-        ASSERT_TRUE(i < expected_answer.size());
-        EXPECT_EQ(str, expected_answer[i]);
-    }
-}
-
-inline void closeSession(bp::child& c, bp::opstream& writer_stream)
-{
-    ASSERT_TRUE(c.running());
-    writer_stream << std::endl << "quit" << std::endl;
-    c.wait();
-}
+#include <a_util/filesystem.h>
+#include <a_util/strings.h>
+#include <chrono>
+#include <fep3/components/clock/clock_service_intf.h>
+#include <thread>
+#include <unordered_set>
 
 /**
-* @brief Test welcome message
-*/
-TEST(ControlTool, testWelcomeMessage)
+ * Test display of welcome message after start
+ *
+ * @req_id          ???
+ * @testData          none
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testWelcomeMessage)
 {
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
@@ -104,18 +45,38 @@ TEST(ControlTool, testWelcomeMessage)
     bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
     const std::vector<std::string> expected_answer = {
         "******************************************************************",
-        "*", "Welcome", "to", "FEP", "Control(c)", "2020", "AUDI", "AG", "*",
-        "*", "use", "help", "to", "print", "help", "*",
-        "******************************************************************"
-    };
-    checkUntilPrompt(c, reader_stream, expected_answer);
+        "*",
+        "Welcome",
+        "to",
+        "FEP",
+        "Control(c)",
+        "2021",
+        "VW",
+        "Group",
+        "*",
+        "*",
+        "use",
+        "help",
+        "to",
+        "print",
+        "help",
+        "*",
+        "******************************************************************"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer));
     closeSession(c, writer_stream);
 }
 
 /**
-* @brief Test help command
-*/
-TEST(ControlTool, testHelp)
+ * Test output of help message at command 'help'
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testHelp)
 {
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
@@ -131,10 +92,13 @@ TEST(ControlTool, testHelp)
         "discoverSystem",
         "setCurrentWorkingDirectory",
         "getCurrentWorkingDirectory",
-        "connectSystem",
         "help",
         "loadSystem",
         "unloadSystem",
+        "setInitPriority",
+        "getInitPriority",
+        "setStartPriority",
+        "getStartPriority",
         "initializeSystem",
         "deinitializeSystem",
         "startSystem",
@@ -150,6 +114,10 @@ TEST(ControlTool, testHelp)
         "startParticipant",
         "stopParticipant",
         "pauseParticipant",
+        "getParticipantPropertyNames",
+        "getParticipantProperties",
+        "getParticipantProperty",
+        "setParticipantProperty",
         "getParticipantRPCObjects",
         "getParticipantRPCObjectIIDs",
         "getParticipantRPCObjectIIDDefinition",
@@ -159,26 +127,22 @@ TEST(ControlTool, testHelp)
         "getParticipantState",
         "setParticipantState",
         "getParticipants",
-        "configureSystem",
         "configureTiming3SystemTime",
         "configureTiming3DiscreteTime",
         "configureTiming3NoSync",
         "getCurrentTimingMaster",
         "enableAutoDiscovery",
         "disableAutoDiscovery",
-	};
+    };
     std::vector<std::string> listed_commands;
 
     std::string str, laststr;
-    for (;;)
-    {
+    for (;;) {
         reader_stream >> str;
-        if (str == "fep>")
-        {
+        if (str == "fep>") {
             break;
         }
-        if (str == ":")
-        {
+        if (str == ":") {
             listed_commands.emplace_back(std::move(laststr));
         }
         laststr = std::move(str);
@@ -191,15 +155,32 @@ TEST(ControlTool, testHelp)
     EXPECT_EQ(commands, listed_commands);
 
     writer_stream << "help help" << std::endl;
-    const std::vector<std::string> expected_answer = { "help", "<command", "name>", ":", "prints", "out", "the", "description", "of", "the", "commands" };
-    checkUntilPrompt(c, reader_stream, expected_answer);
+    const std::vector<std::string> expected_answer = {"help",
+                                                      "<command",
+                                                      "name>",
+                                                      ":",
+                                                      "prints",
+                                                      "out",
+                                                      "the",
+                                                      "description",
+                                                      "of",
+                                                      "the",
+                                                      "commands"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer));
     closeSession(c, writer_stream);
 }
 
 /**
-* @brief Test getCurrentWorkingDirectory (if it returns an absolute path)
-*/
-TEST(ControlTool, testGetCurrentWorkingDirectory)
+ * Test reading the current work directory (absolute path)
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testGetCurrentWorkingDirectory)
 {
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
@@ -219,9 +200,16 @@ TEST(ControlTool, testGetCurrentWorkingDirectory)
 }
 
 /**
-* @brief Test setCurrentWorkingDirectory (if it returns an absolute path)
-*/
-TEST(ControlTool, testSetCurrentWorkingDirectory)
+ * Test setting a new current work directory
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testSetCurrentWorkingDirectory)
 {
     const auto current_path = a_util::filesystem::getWorkingDirectory();
 
@@ -232,7 +220,8 @@ TEST(ControlTool, testSetCurrentWorkingDirectory)
 
     std::string line;
     const auto new_path = current_path + "files";
-    writer_stream << "setCurrentWorkingDirectory " << quoteFilenameIfNecessary(new_path.toString()) << std::endl;
+    writer_stream << "setCurrentWorkingDirectory " << quoteFilenameIfNecessary(new_path.toString())
+                  << std::endl;
     ASSERT_TRUE(c.running());
     ASSERT_TRUE(std::getline(reader_stream, line));
     a_util::strings::trim(line);
@@ -240,78 +229,26 @@ TEST(ControlTool, testSetCurrentWorkingDirectory)
     ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
     a_util::filesystem::Path returned_new_path(line.substr(expected_prefix.size()));
     ASSERT_TRUE(returned_new_path.isAbsolute());
-    EXPECT_TRUE(returned_new_path == new_path);
+    EXPECT_EQ(returned_new_path, new_path);
     closeSession(c, writer_stream);
     a_util::filesystem::setWorkingDirectory(current_path);
 }
 
-struct TestElement : public fep3::core::ElementBase
-{
-    TestElement() : fep3::core::ElementBase("Testelement", "3.0")
-    {
-    }
-};
-struct PartStruct
-{
-    PartStruct(PartStruct&&) = default;
-    ~PartStruct() = default;
-    PartStruct(fep3::core::Participant&& part) : _part(std::move(part)), _part_executor(_part)
-    {
-    }
-    fep3::core::Participant _part;
-    fep3::core::ParticipantExecutor _part_executor;
-};
-using TestParticipants = std::map<std::string, std::unique_ptr<PartStruct>>;
-inline TestParticipants createTestParticipants(const std::vector<std::string>& participant_names, const std::string& system_name)
-{
-    using namespace fep3::core;
-    TestParticipants test_parts;
-    std::for_each(participant_names.begin(), participant_names.end(), [&](const std::string& name)
-    {
-        auto part = createParticipant<ElementFactory<TestElement>>(name, "1.0", system_name);
-        auto part_exec = std::make_unique<PartStruct>(std::move(part));
-        part_exec->_part_executor.exec();
-        test_parts[name].reset(part_exec.release());
-    }
-    );
-    return std::move(test_parts);
-}
-
-inline std::unique_ptr<fep3::System> createSystem(TestParticipants& test_parts, bool start_system = true)
-{
-    const std::string sys_name = "FEP_SYSTEM";
-    const std::string part_name_1 = "test_part_0";
-    const std::string part_name_2 = "test_part_1";
-    const auto participant_names = std::vector<std::string>{ part_name_1, part_name_2 };
-    test_parts = createTestParticipants(participant_names, sys_name);
-    std::unique_ptr<fep3::System> my_sys(new fep3::System(sys_name));
-    my_sys->add(part_name_1);
-    my_sys->add(part_name_2);
-
-    auto part_1 = my_sys->getParticipant(part_name_1);
-    auto logging_service_1 = part_1.getRPCComponentProxyByIID<fep3::rpc::IRPCLoggingService>();
-    logging_service_1->setLoggerFilter("participant", { fep3::logging::Severity::off, {"console"} });
-
-    auto part_2 = my_sys->getParticipant(part_name_2);
-    auto logging_service_2 = part_2.getRPCComponentProxyByIID<fep3::rpc::IRPCLoggingService>();
-    logging_service_2->setLoggerFilter("participant", { fep3::logging::Severity::off, {"console"} });
-
-    my_sys->load();
-    my_sys->initialize();
-    if (start_system)
-    {
-        my_sys->start();
-    }
-    return my_sys;
-}
-
 /**
-* @brief Test discoverAllSystems
-*/
-TEST(ControlTool, testDiscoverAllSystems)
+ * Test discover all systems. The test should
+ * discover the test system with 2 participants
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testDiscoverAllSystems)
 {
     TestParticipants test_parts;
-    auto fep_system = createSystem(test_parts);
+    ASSERT_TRUE(createSystem(test_parts));
 
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
@@ -319,152 +256,169 @@ TEST(ControlTool, testDiscoverAllSystems)
     skipUntilPrompt(c, reader_stream);
 
     writer_stream << "discoverAllSystems" << std::endl;
+    std::string ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find(_system_name + ":test_part_0,test_part_1") != std::string::npos) <<
+    " discoverAllSystems did not return :test_part_0,test_part_1 instead returned:" << ss;
 
-    const std::vector<std::string> expected_answer = { "FEP_SYSTEM", ":", "test_part_0,", "test_part_1" };
-    checkUntilPrompt(c, reader_stream, expected_answer);
     closeSession(c, writer_stream);
 }
 
 /**
-* @brief Test connectSystem, getParticipants, getSystemState, startSystem, stopSystem
-*/
-TEST(ControlTool, testSystemHandling)
+ * Test of system handling. Test system
+ * will be switched to all possible states
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testSystemHandling)
 {
-    const auto current_path = a_util::filesystem::getWorkingDirectory();
     TestParticipants test_parts;
-    auto fep_system = createSystem(test_parts, false);
+    ASSERT_TRUE(createSystem(test_parts, false));
 
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
     bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
     skipUntilPrompt(c, reader_stream);
 
-    const auto test_files_path = current_path + "files";
-    writer_stream << "setCurrentWorkingDirectory " << quoteFilenameIfNecessary(test_files_path.toString()) << std::endl;
-    skipUntilPrompt(c, reader_stream);
+    writer_stream << "discoverSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_participants = {
+        _system_name, ":", "test_part_0,", "test_part_1"};
 
-    writer_stream << "connectSystem \"DEMO fep_sdk.system\"" << std::endl;
-    const std::vector<std::string> expected_answer_participants = { "FEP_SYSTEM", ":", "test_part_0,", "test_part_1" };
-    checkUntilPrompt(c, reader_stream, expected_answer_participants);
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_participants));
 
-    writer_stream << "getParticipants FEP_SYSTEM" << std::endl;
-    checkUntilPrompt(c, reader_stream, expected_answer_participants);
+    writer_stream << "getParticipants " << _system_name << std::endl;
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_participants));
 
-    writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-    const std::vector<std::string> expected_answer_state_initialized = { "4", "-", "initialized", "-", "homogeneous", ":", "1"};
-    checkUntilPrompt(c, reader_stream, expected_answer_state_initialized);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_state_initialized = {
+        "4", ":", "initialized", ":", "homogeneous"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_state_initialized));
 
-    writer_stream << "startSystem FEP_SYSTEM" << std::endl;
-    const std::vector<std::string> expected_answer_started = { "FEP_SYSTEM", "started" };
-    checkUntilPrompt(c, reader_stream, expected_answer_started);
+    writer_stream << "startSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_started = {_system_name, "started"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_started));
 
-    writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-    const std::vector<std::string> expected_answer_state_running = { "6", "-", "running", "-", "homogeneous", ":", "1" };
-    checkUntilPrompt(c, reader_stream, expected_answer_state_running);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_state_running = {
+        "6", ":", "running", ":", "homogeneous"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_state_running));
 
-	writer_stream << "pauseSystem FEP_SYSTEM" << std::endl;
-	const std::vector<std::string> expected_answer_paused = { "FEP_SYSTEM", "paused" };
-	checkUntilPrompt(c, reader_stream, expected_answer_paused);
+    writer_stream << "stopSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_stopped = {_system_name, "stopped"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_stopped));
 
-	writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-	const std::vector<std::string> expected_answer_state_paused = { "5", "-", "paused", "-", "homogeneous", ":", "1" };
-	checkUntilPrompt(c, reader_stream, expected_answer_state_paused);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_state_initialized));
 
-    writer_stream << "stopSystem FEP_SYSTEM" << std::endl;
-    const std::vector<std::string> expected_answer_stopped = { "FEP_SYSTEM", "stopped" };
-    checkUntilPrompt(c, reader_stream, expected_answer_stopped);
+    writer_stream << "deinitializeSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_deinitialized = {_system_name, "deinitialized"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_deinitialized));
 
-    writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-    checkUntilPrompt(c, reader_stream, expected_answer_state_initialized);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_state_loaded = {
+        "3", ":", "loaded", ":", "homogeneous"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_state_loaded));
 
-	writer_stream << "deinitializeSystem FEP_SYSTEM" << std::endl;
-	const std::vector<std::string> expected_answer_deinitialized = { "FEP_SYSTEM", "deinitialized" };
-	checkUntilPrompt(c, reader_stream, expected_answer_deinitialized);
+    writer_stream << "unloadSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_unloaded = {_system_name, "unloaded"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_unloaded));
 
-	writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-	const std::vector<std::string> expected_answer_state_loaded = { "3", "-", "loaded", "-", "homogeneous", ":", "1" };
-	checkUntilPrompt(c, reader_stream, expected_answer_state_loaded);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_state_unloaded = {
+        "2", ":", "unloaded", ":", "homogeneous"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_state_unloaded));
 
-	writer_stream << "unloadSystem FEP_SYSTEM" << std::endl;
-	const std::vector<std::string> expected_answer_unloaded = { "FEP_SYSTEM", "unloaded" };
-	checkUntilPrompt(c, reader_stream, expected_answer_unloaded);
+    writer_stream << "loadSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_loaded = {_system_name, "loaded"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_loaded));
 
-	writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-	const std::vector<std::string> expected_answer_state_unloaded = { "2", "-", "unloaded", "-", "homogeneous", ":", "1" };
-	checkUntilPrompt(c, reader_stream, expected_answer_state_unloaded);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_state_loaded));
 
-	writer_stream << "loadSystem FEP_SYSTEM" << std::endl;
-	const std::vector<std::string> expected_answer_loaded = { "FEP_SYSTEM", "loaded" };
-	checkUntilPrompt(c, reader_stream, expected_answer_loaded);
+    writer_stream << "initializeSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_initialized = {_system_name, "initialized"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_initialized));
 
-	writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-	checkUntilPrompt(c, reader_stream, expected_answer_state_loaded);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_state_initialized));
 
-	writer_stream << "initializeSystem FEP_SYSTEM" << std::endl;
-	const std::vector<std::string> expected_answer_initialized = { "FEP_SYSTEM", "initialized" };
-	checkUntilPrompt(c, reader_stream, expected_answer_initialized);
+    writer_stream << "shutdownSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_shutdown_denied = {"cannot",
+                                                                      "shutdown",
+                                                                      "system",
+                                                                      "'" + _system_name + "',",
+                                                                      "exception:",
+                                                                      "state",
+                                                                      "machine",
+                                                                      "shutdown",
+                                                                      "denied",
+                                                                      "state",
+                                                                      "machine",
+                                                                      "shutdown",
+                                                                      "denied"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_shutdown_denied));
 
-	writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-	checkUntilPrompt(c, reader_stream, expected_answer_state_initialized);
+    writer_stream << "deinitializeSystem " << _system_name << std::endl;
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_deinitialized));
+
+    writer_stream << "unloadSystem " << _system_name << std::endl;
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_unloaded));
+
+    writer_stream << "shutdownSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_shutdown_ok = {_system_name, "shutdowned"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_shutdown_ok));
+
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    const std::vector<std::string> expected_not_connected = {
+        "system", "\"" + _system_name + "\"", "is", "not", "connected"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_not_connected));
 
     closeSession(c, writer_stream);
-    a_util::filesystem::setWorkingDirectory(current_path);
 }
 
 /**
-* @brief Test configureSystem
-*/
-TEST(ControlTool, testConfigureSystem)
+ * Test to discover an existing fep system
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testDiscoverSystem)
 {
-    const auto current_path = a_util::filesystem::getWorkingDirectory();
     TestParticipants test_parts;
-    auto fep_system = createSystem(test_parts, false);
+    ASSERT_TRUE(createSystem(test_parts));
 
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
     bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
     skipUntilPrompt(c, reader_stream);
 
-    const auto test_files_path = current_path + "files";
-    writer_stream << "setCurrentWorkingDirectory " << quoteFilenameIfNecessary(test_files_path.toString()) << std::endl;
-    skipUntilPrompt(c, reader_stream);
+    writer_stream << "discoverSystem " << _system_name << std::endl;
 
-    writer_stream << "connectSystem \"DEMO fep_sdk.system\"" << std::endl;
-    const std::vector<std::string> expected_answer_participants = { "FEP_SYSTEM", ":", "test_part_0,", "test_part_1" };
-    checkUntilPrompt(c, reader_stream, expected_answer_participants);
-
-    writer_stream << "configureSystem FEP_SYSTEM DEMO.properties" << std::endl;
-    const std::vector<std::string> expected_answer_configure = { "properties", "set"};
-    checkUntilPrompt(c, reader_stream, expected_answer_configure);
-
+    const std::vector<std::string> expected_answer = {
+        _system_name, ":", "test_part_0,", "test_part_1"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer));
     closeSession(c, writer_stream);
-    a_util::filesystem::setWorkingDirectory(current_path);
 }
 
 /**
-* @brief Test discoverSystem
-*/
-TEST(ControlTool, testDiscoverSystem)
-{
-	TestParticipants test_parts;
-	auto fep_system = createSystem(test_parts);
-
-	bp::opstream writer_stream;
-	bp::ipstream reader_stream;
-	bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
-	skipUntilPrompt(c, reader_stream);
-
-	writer_stream << "discoverSystem FEP_SYSTEM" << std::endl;
-
-	const std::vector<std::string> expected_answer = { "FEP_SYSTEM", ":", "test_part_0,", "test_part_1" };
-	checkUntilPrompt(c, reader_stream, expected_answer);
-	closeSession(c, writer_stream);
-}
-
-/**
-* @brief Test wrong command
-*/
-TEST(ControlTool, testInvalidCommand)
+ * Test reaction to an invalid command
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        negative test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method replys with expected hint
+ */
+TEST_F(ControlTool, testInvalidCommand)
 {
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
@@ -473,15 +427,23 @@ TEST(ControlTool, testInvalidCommand)
 
     writer_stream << "hlep" << std::endl;
 
-    const std::vector<std::string> expected_answer = { "Invalid", "command", "\"hlep\",", "use", "\"help\"", "for", "valid", "commands" };
-    checkUntilPrompt(c, reader_stream, expected_answer);
+    const std::vector<std::string> expected_answer = {
+        "Invalid", "command", "'hlep',", "use", "'help'", "for", "valid", "commands"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer));
     closeSession(c, writer_stream);
 }
 
 /**
-* @brief Test wrong number of arguments for a command
-*/
-TEST(ControlTool, testWrongNumberOfArguments)
+ * Test reaction to an invalid number of arguments
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        negative test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method replys with expected hint
+ */
+TEST_F(ControlTool, testWrongNumberOfArguments)
 {
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
@@ -490,20 +452,42 @@ TEST(ControlTool, testWrongNumberOfArguments)
 
     writer_stream << "getCurrentWorkingDirectory c:" << std::endl;
 
-    const std::vector<std::string> expected_answer = { "Invalid", "number", "of", "arguments", "for", "\"getCurrentWorkingDirectory\"",
-        "(1", "instead", "of", "0),", "use", "\"help\"", "for", "more", "information" };
-    checkUntilPrompt(c, reader_stream, expected_answer);
+    const std::vector<std::string> expected_answer = {"Invalid",
+                                                      "number",
+                                                      "of",
+                                                      "arguments",
+                                                      "for",
+                                                      "'getCurrentWorkingDirectory'",
+                                                      "(1",
+                                                      "instead",
+                                                      "of",
+                                                      "0),",
+                                                      "use",
+                                                      "'help'",
+                                                      "for",
+                                                      "more",
+                                                      "information"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer));
     closeSession(c, writer_stream);
 }
 
 /**
-* @brief Test outer command line
-*/
-TEST(ControlTool, testCommandlineArgument)
+ * Test usage of command line arguments
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testCommandlineArgument)
 {
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
-    bp::child c(binary_tool_path + " -e getCurrentWorkingDirectory", bp::std_out > reader_stream, bp::std_in < writer_stream);
+    bp::child c(binary_tool_path + " -e getCurrentWorkingDirectory",
+                bp::std_out > reader_stream,
+                bp::std_in < writer_stream);
 
     ASSERT_TRUE(c.running());
 
@@ -514,13 +498,21 @@ TEST(ControlTool, testCommandlineArgument)
     ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
     a_util::filesystem::Path current_dir(line.substr(expected_prefix.size()));
     EXPECT_TRUE(current_dir.isAbsolute());
-    closeSession(c, writer_stream);
+    // Session should already be closed
+    // closeSession(c, writer_stream);
 }
 
 /**
-* @brief Test exit
-*/
-TEST(ControlTool, testExit)
+ * Test exit of test object
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  test object is no longer running
+ */
+TEST_F(ControlTool, testExit)
 {
     using namespace std::chrono_literals;
 
@@ -536,9 +528,17 @@ TEST(ControlTool, testExit)
 }
 
 /**
-* @brief Test quit
-*/
-TEST(ControlTool, testQuit)
+ * Test quit of test object
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  test object is no longer running
+ */
+
+TEST_F(ControlTool, testQuit)
 {
     using namespace std::chrono_literals;
 
@@ -554,12 +554,20 @@ TEST(ControlTool, testQuit)
 }
 
 /**
-* @brief Test participant state transitions, setSystemState, setParticipantState
-*/
-TEST(ControlTool, testParticipantStates)
+ * Test of participant handling. Participants of the
+ * test system will be switched to all possible states
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testParticipantStates)
 {
     TestParticipants test_parts;
-    auto fep_system = createSystem(test_parts, false);
+    ASSERT_TRUE(createSystem(test_parts, false));
 
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
@@ -567,43 +575,49 @@ TEST(ControlTool, testParticipantStates)
     skipUntilPrompt(c, reader_stream);
 
     writer_stream << "discoverAllSystems" << std::endl;
-
-    const std::vector<std::string> expected_answer = { "FEP_SYSTEM", ":", "test_part_0,", "test_part_1" };
-    checkUntilPrompt(c, reader_stream, expected_answer);
+    std::string ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find(_system_name + ":test_part_0,test_part_1") != std::string::npos);
 
     using State = fep3::SystemAggregatedState;
-    const std::vector<std::string> states_desc = {
-        "undefined", //0
-        "unreachable", //1
-        "unloaded", //2
-        "loaded", //3
-        "initialized", //4
-        "paused", //5
-        "running"
-    };
+    const std::vector<std::string> states_desc = {"undefined",   // 0
+                                                  "unreachable", // 1
+                                                  "unloaded",    // 2
+                                                  "loaded",      // 3
+                                                  "initialized", // 4
+                                                  "paused",      // 5
+                                                  "running"};
 
-    auto check_states = [&](State system_state, int homogenous, State part0_state, State part1_state)
-    {
-        writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-        const std::vector<std::string> expected_answer_system_state = { std::to_string(system_state), "-", states_desc[system_state],
-            "-", "homogeneous", ":", std::to_string(homogenous) };
-        
-        checkUntilPrompt(c, reader_stream, expected_answer_system_state);
+    auto check_states =
+        [&](State system_state, int homogenous, State part0_state, State part1_state) {
+            writer_stream << "getSystemState " << _system_name << std::endl;
+            const std::vector<std::string> expected_answer_system_state = {
+                std::to_string(system_state),
+                ":",
+                states_desc[system_state],
+                ":",
+                homogenous ? "homogeneous" : "inhomogeneous"};
 
-        writer_stream << "getParticipantState FEP_SYSTEM test_part_0" << std::endl;
-        const std::vector<std::string> expected_answer_part0_state = { std::to_string(part0_state), "-", states_desc[part0_state] };
-        checkUntilPrompt(c, reader_stream, expected_answer_part0_state);
+            EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_system_state));
 
-        writer_stream << "getParticipantState FEP_SYSTEM test_part_1" << std::endl;
-        const std::vector<std::string> expected_answer_part1_state = { std::to_string(part1_state), "-", states_desc[part1_state] };
-        checkUntilPrompt(c, reader_stream, expected_answer_part1_state);
-    };
+            writer_stream << "getParticipantState " << _system_name << " test_part_0" << std::endl;
+            const std::vector<std::string> expected_answer_part0_state = {
+                std::to_string(part0_state), ":", states_desc[part0_state]};
+            EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_part0_state));
 
-    auto action_participant = [&](const std::string& participant_number, const std::string& action, const std::string& result)
-    {
-        writer_stream << action << "Participant FEP_SYSTEM test_part_" << participant_number << std::endl;
-        const std::vector<std::string> expected_answer = { "test_part_" + participant_number + "@FEP_SYSTEM", result };
-        checkUntilPrompt(c, reader_stream, expected_answer);
+            writer_stream << "getParticipantState " << _system_name << " test_part_1" << std::endl;
+            const std::vector<std::string> expected_answer_part1_state = {
+                std::to_string(part1_state), ":", states_desc[part1_state]};
+            EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_part1_state));
+        };
+
+    auto action_participant = [&](const std::string& participant_number,
+                                  const std::string& action,
+                                  const std::string& result) {
+        writer_stream << action << "Participant " << _system_name << " test_part_"
+                      << participant_number << std::endl;
+        const std::vector<std::string> expected_answer = {
+            "test_part_" + participant_number + "@" + _system_name, result};
+        EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer));
     };
 
     check_states(State::initialized, 1, State::initialized, State::initialized);
@@ -611,10 +625,8 @@ TEST(ControlTool, testParticipantStates)
     check_states(State::initialized, 0, State::running, State::initialized);
     action_participant("1", "start", "started");
     check_states(State::running, 1, State::running, State::running);
-    action_participant("1", "pause", "paused");
-    check_states(State::paused, 0, State::running, State::paused);
     action_participant("0", "stop", "stopped");
-    check_states(State::initialized, 0, State::initialized, State::paused);
+    check_states(State::initialized, 0, State::initialized, State::running);
     action_participant("1", "stop", "stopped");
     check_states(State::initialized, 1, State::initialized, State::initialized);
     action_participant("0", "deinitialize", "deinitialized");
@@ -626,26 +638,115 @@ TEST(ControlTool, testParticipantStates)
     action_participant("0", "initialize", "initialized");
     check_states(State::initialized, 1, State::initialized, State::initialized);
 
-    writer_stream << "setSystemState FEP_SYSTEM paused" << std::endl;
-    const std::vector<std::string> expected_answer_system_state_paused = { "5", "-", "paused", "-", "homogeneous", ":", "1" };
-    checkUntilPrompt(c, reader_stream, expected_answer_system_state_paused);
+    writer_stream << "setParticipantState " << _system_name << " test_part_1 running" << std::endl;
+    const std::vector<std::string> expected_answer_part_state_running = {"6", ":", "running"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_part_state_running));
 
-    writer_stream << "setParticipantState FEP_SYSTEM test_part_1 running" << std::endl;
-    const std::vector<std::string> expected_answer_part_state_running = { "6", "-", "running"};
-    checkUntilPrompt(c, reader_stream, expected_answer_part_state_running);
-
-    check_states(State::paused, 0, State::paused, State::running);
+    check_states(State::initialized, 0, State::initialized, State::running);
 
     closeSession(c, writer_stream);
- }
+}
 
 /**
-* @brief Test getCurrentTimingMaster, configureTiming3SystemTime, configureTiming3NoSync and configureTiming3DiscreteTime
-*/
-TEST(ControlTool, testTimingMaster)
+ * Test property handling of a participant
+ * sets and gets properties of a participant
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testProperties)
 {
     TestParticipants test_parts;
-    auto fep_system = createSystem(test_parts, false);
+    ASSERT_TRUE(createSystem(test_parts, false));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "discoverAllSystems" << std::endl;
+    std::string ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find(_system_name + ":test_part_0,test_part_1") != std::string::npos);
+
+    // Read a Property leaf
+    writer_stream << "getParticipantProperty " << _system_name
+                  << " test_part_0 clock_synchronization/timing_master" << std::endl;
+    const std::vector<std::string> expected_answer_empty = {"timing_master", ":"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_empty));
+
+    // Read a Property node
+    writer_stream << "getParticipantProperty " << _system_name << " test_part_0 clock" << std::endl;
+    const std::vector<std::string> expected_answer_read_node = {
+        "main_clock",
+        ":",
+        "local_system_realtime",
+        FEP3_TIME_UPDATE_TIMEOUT_PROPERTY,
+        ":",
+        a_util::strings::toString(FEP3_TIME_UPDATE_TIMEOUT_DEFAULT_VALUE),
+        "time_factor",
+        ":",
+        "1.000000",
+        FEP3_CLOCK_SIM_TIME_STEP_SIZE_PROPERTY,
+        ":",
+        a_util::strings::toString(FEP3_CLOCK_SIM_TIME_STEP_SIZE_DEFAULT_VALUE)};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_read_node));
+
+    // Set property
+    writer_stream << "setParticipantProperty " << _system_name
+                  << " test_part_0 "
+                     "clock_synchronization/timing_master test_part_1"
+                  << std::endl;
+    const std::vector<std::string> expected_answer_set = {"property", "set"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_set));
+
+    // Read the Property
+    writer_stream << "getParticipantProperty " << _system_name
+                  << " test_part_0 clock_synchronization/timing_master" << std::endl;
+    const std::vector<std::string> expected_answer_get = {"timing_master", ":", "test_part_1"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_get));
+
+    // Read all default Properties - only test for the first leaf
+    writer_stream << "getParticipantProperties " << _system_name << " test_part_0" << std::endl;
+    ASSERT_TRUE(c.running());
+
+    std::string line;
+    ASSERT_TRUE(std::getline(reader_stream, line));
+    a_util::strings::trim(line);
+    std::string expected_prefix = std::string("test_part_0 :");
+    ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
+
+    ASSERT_TRUE(std::getline(reader_stream, line));
+    a_util::strings::trim(line);
+    expected_prefix = "logging :";
+    ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
+
+    ASSERT_TRUE(std::getline(reader_stream, line));
+    a_util::strings::trim(line);
+    expected_prefix = "default_sinks : console,rpc";
+    ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
+
+    closeSession(c, writer_stream);
+}
+
+/**
+ * Test handling of timing master of the system
+ * execute get and configure functions for master
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testTimingMaster)
+{
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts, false));
 
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
@@ -654,69 +755,529 @@ TEST(ControlTool, testTimingMaster)
 
     writer_stream << "discoverAllSystems" << std::endl;
 
-    const std::vector<std::string> expected_answer = { "FEP_SYSTEM", ":", "test_part_0,", "test_part_1" };
-    checkUntilPrompt(c, reader_stream, expected_answer);
+    std::string ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find(_system_name+":test_part_0,test_part_1") != std::string::npos);
 
-    writer_stream << "getCurrentTimingMaster FEP_SYSTEM" << std::endl;
-    const std::vector<std::string> expected_answer_empty_timing_masters = { "timing", "masters:" };
-    checkUntilPrompt(c, reader_stream, expected_answer_empty_timing_masters);
+    writer_stream << "getCurrentTimingMaster " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_empty_timing_masters = {
+        "timing", "masters", ":"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_empty_timing_masters));
 
-    writer_stream << "configureTiming3SystemTime FEP_SYSTEM test_part_0" << std::endl;
-    checkUntilPrompt(c, reader_stream, {});
+    writer_stream << "configureTiming3SystemTime " << _system_name << " test_part_0" << std::endl;
+    const std::vector<std::string> expected_answer_timing = {
+        "successfully", "set", "SystemTimingSystemTime"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_timing));
 
-    writer_stream << "getCurrentTimingMaster FEP_SYSTEM" << std::endl;
-    const std::vector<std::string> expected_answer_part0_timing_masters = { "timing", "masters:", "test_part_0" };
-    checkUntilPrompt(c, reader_stream, expected_answer_part0_timing_masters);
+    writer_stream << "getCurrentTimingMaster " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_part0_timing_masters = {
+        "timing", "masters", ":", "test_part_0"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_part0_timing_masters));
 
-    writer_stream << "configureTiming3NoSync FEP_SYSTEM" << std::endl;
-    checkUntilPrompt(c, reader_stream, {});
+    writer_stream << "configureTiming3NoSync " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_timing_no_sync = {
+        "successfully", "set", "SystemTimeNoSync"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_timing_no_sync));
 
-    writer_stream << "getCurrentTimingMaster FEP_SYSTEM" << std::endl;
-    checkUntilPrompt(c, reader_stream, expected_answer_empty_timing_masters);
+    writer_stream << "getCurrentTimingMaster " << _system_name << std::endl;
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_empty_timing_masters));
 
-    writer_stream << "configureTiming3DiscreteTime FEP_SYSTEM test_part_1 1.0 0.0" << std::endl;
-    checkUntilPrompt(c, reader_stream, {});
+    writer_stream << "configureTiming3DiscreteTime " << _system_name << " test_part_1 1.0 0.0"
+                  << std::endl;
+    const std::vector<std::string> expected_answer_timing_discrete = {
+        "successfully", "set", "SystemTimingDiscrete"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_timing_discrete));
 
-    writer_stream << "getCurrentTimingMaster FEP_SYSTEM" << std::endl;
-    const std::vector<std::string> expected_answer_part1_timing_masters = { "timing", "masters:", "test_part_1"};
-    checkUntilPrompt(c, reader_stream, expected_answer_part1_timing_masters);
+    writer_stream << "getCurrentTimingMaster " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_part1_timing_masters = {
+        "timing", "masters", ":", "test_part_1"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_part1_timing_masters));
 
     closeSession(c, writer_stream);
 }
 
 /**
-* @brief Test enableAutoDiscovery, disableAutoDiscovery // off by default
-*/
-TEST(ControlTool, testAutoDiscovery)
+ * Test autodiscovery functionality if enabled
+ * If on, the system should be detected automatically
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testAutoDiscovery)
 {
     TestParticipants test_parts;
-    auto fep_system = createSystem(test_parts, false);
+    ASSERT_TRUE(createSystem(test_parts, false));
 
     bp::opstream writer_stream;
     bp::ipstream reader_stream;
     bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
     skipUntilPrompt(c, reader_stream);
 
-    writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-    const std::vector<std::string> expected_answer_not_connected = { "system", "\"FEP_SYSTEM\"",
-        "is", "not", "connected" };
-    checkUntilPrompt(c, reader_stream, expected_answer_not_connected);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_not_connected = {
+        "system", "\"" + _system_name + "\"", "is", "not", "connected"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_not_connected));
 
     writer_stream << "disableAutoDiscovery" << std::endl;
 
-    const std::vector<std::string> expected_answer_disabled = {  "auto_discovery:", "disabled" };
-    checkUntilPrompt(c, reader_stream, expected_answer_disabled);
+    const std::vector<std::string> expected_answer_disabled = {"auto_discovery:", "disabled"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_disabled));
 
-    writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-    checkUntilPrompt(c, reader_stream, expected_answer_not_connected);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_not_connected));
 
     writer_stream << "enableAutoDiscovery" << std::endl;
 
-    const std::vector<std::string> expected_answer_enabled = { "auto_discovery:", "enabled" };
-    checkUntilPrompt(c, reader_stream, expected_answer_enabled);
+    const std::vector<std::string> expected_answer_enabled = {"auto_discovery:", "enabled"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_enabled));
 
-    writer_stream << "getSystemState FEP_SYSTEM" << std::endl;
-    const std::vector<std::string> expected_answer_state_initialized = { "4", "-", "initialized", "-", "homogeneous", ":", "1" };
-    checkUntilPrompt(c, reader_stream, expected_answer_state_initialized);
+    writer_stream << "getSystemState " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_state_initialized = {
+        "4", ":", "initialized", ":", "homogeneous"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_state_initialized));
+}
 
+/**
+ * Test reading properties of participants in json mode
+ * Get single/all properties of one participant of the system
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testJsonProperties)
+{
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts, false));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(
+        binary_tool_path + " --json", bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "discoverAllSystems" << std::endl;
+    std::string ss = getStreamUntilPromt(c, reader_stream);
+
+    auto roots = readJsonArray(ss);
+    bool system_found = false;
+    for (auto& root: roots) {
+        ASSERT_TRUE(root.isObject());
+        std::string t1 = root["systemname"].asString();
+        if (root["systemname"].asString() == _system_name) {
+            EXPECT_EQ(root["action"].asString(), "discoverAllSystems");
+            EXPECT_EQ(root["participants"].asString(), "test_part_0,test_part_1");
+            system_found = true;
+        }
+    }
+    ASSERT_TRUE(system_found);
+
+    ASSERT_TRUE(c.running());
+    writer_stream << "getParticipantProperties " << _system_name << " test_part_0" << std::endl;
+
+    auto root = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(root.isObject());
+
+    EXPECT_EQ(root["participant_properties"][0]["name"].asString(), "logging");
+    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["name"].asString(),
+              "default_sinks");
+    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["type"].asString(), "string");
+    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["value"].asString(),
+              "console,rpc");
+
+    ASSERT_TRUE(c.running());
+    writer_stream << "getParticipantProperty " << _system_name << " test_part_0 clock/main_clock"
+                  << std::endl;
+
+    root = readJsonArray(reader_stream);
+    ASSERT_TRUE(root.isObject());
+
+    EXPECT_EQ(root["name"].asString(), "main_clock");
+    EXPECT_EQ(root["type"].asString(), "string");
+    EXPECT_EQ(root["value"].asString(), "local_system_realtime");
+}
+
+/**
+ * Test monitoring of a FEP system in json mode
+ * Get JSON formatted output
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+
+TEST_F(ControlTool, testJsonMonitoring_enableJSON)
+{
+    using namespace std::chrono_literals;
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "enableJson" << std::endl;
+    auto ret = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(ret.isObject());
+    EXPECT_EQ(ret["action"].asString(), "enableJson");
+    EXPECT_EQ(ret["note"].asString(), "json_mode: enabled");
+    EXPECT_EQ(ret["status"].asInt(), 0);
+
+    writer_stream << "discoverSystem " << _system_name << std::endl;
+
+    auto root = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(root.isObject());
+    EXPECT_EQ(root["action"].asString(), "discoverSystem");
+    EXPECT_EQ(root["system name"].asString(), _system_name);
+    EXPECT_EQ(root["participants"].asString(), "test_part_0, test_part_1");
+
+    ASSERT_TRUE(c.running());
+    writer_stream << "startMonitoringSystem " << _system_name << std::endl;
+    auto ret_monitoring = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(ret_monitoring.isObject());
+    EXPECT_EQ(ret_monitoring["action"].asString(), "startMonitoringSystem");
+    EXPECT_EQ(ret_monitoring["note"].asString(), "monitoring: enabled");
+    EXPECT_EQ(ret_monitoring["status"].asInt(), 0);
+
+    writer_stream << "stopSystem " << _system_name << std::endl;
+
+    const int num_expected_messages = 2;
+    int message_count = 0;
+
+    while (message_count < num_expected_messages) {
+        root = readJsonArray(reader_stream);
+        ASSERT_TRUE(root.isObject());
+        if ((root["log_type"].asString() == "message")) {
+            message_count++;
+        }
+
+        if ((root["action"].asString() == "stopSystem") &&
+            (root["note"].asString() == _system_name + " stopped")) {
+            message_count++;
+        }
+    }
+
+    ASSERT_TRUE(c.running());
+    writer_stream << "stopMonitoringSystem " << _system_name << std::endl;
+    skipUntilPrompt(c, reader_stream);
+}
+
+/**
+ * Test json output of a note message
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testWriteNote)
+{
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(
+        binary_tool_path + " --json", bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    const auto path = a_util::filesystem::getWorkingDirectory() + "files";
+    writer_stream << "setCurrentWorkingDirectory " << quoteFilenameIfNecessary(path.toString())
+                  << std::endl;
+
+    const auto root = readJsonArray(reader_stream);
+    ASSERT_TRUE(root.isObject());
+
+    EXPECT_EQ(root["action"].asString(), "setCurrentWorkingDirectory");
+    EXPECT_EQ(root["working directory"].asString(), path);
+}
+
+/**
+ * Test json output of an error message
+ *
+ * @req_id          ???
+ * @testData        none
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testWriteError)
+{
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(
+        binary_tool_path + " --json", bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    const auto path = a_util::filesystem::getWorkingDirectory() + "file";
+    writer_stream << "setCurrentWorkingDirectory " << quoteFilenameIfNecessary(path.toString())
+                  << std::endl;
+
+    const auto root = readJsonArray(reader_stream);
+    ASSERT_TRUE(root.isObject());
+
+    EXPECT_EQ(root["action"].asString(), "setCurrentWorkingDirectory");
+    EXPECT_EQ(root["error"].asString(),
+              "cannot set working directory to '" + path.toString() + "'");
+    EXPECT_EQ(root["reason"].asString(), "INVALID_PATH");
+}
+
+/**
+ * Test json output of an exception message
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testWriteException)
+{
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(
+        binary_tool_path + " --json", bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "discoverSystem " << _system_name << std::endl;
+    auto root = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "getParticipantProperty " << _system_name << " test_part Clock/MainClock"
+                  << std::endl;
+    root = readJsonArray(reader_stream);
+    ASSERT_TRUE(root.isObject());
+
+    EXPECT_EQ(root["action"].asString(), "getParticipantProperty");
+    EXPECT_EQ(root["exception"].asString(),
+              "cannot get property Clock/MainClock for participant 'test_part@" + _system_name +
+                  "\'");
+    EXPECT_EQ(root["reason"].asString(), "No Participant with the name test_part found");
+}
+
+/**
+ * Test switch output between normal and json mode
+ * Output will be tested with paritcipant properties
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testEnableDisableJsonMode)
+{
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "discoverSystem " << _system_name << std::endl;
+
+    const std::vector<std::string> expected_answer = {
+        _system_name, ":", "test_part_0,", "test_part_1"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer));
+
+    // Check default getParticipantProperties
+    writer_stream << "getParticipantProperties " << _system_name << " test_part_0" << std::endl;
+    ASSERT_TRUE(c.running());
+
+    std::string line;
+    ASSERT_TRUE(std::getline(reader_stream, line));
+    a_util::strings::trim(line);
+    std::string expected_prefix = std::string("test_part_0 :");
+    ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "enableJson" << std::endl;
+
+    auto root = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(root.isObject());
+    EXPECT_EQ(root["action"].asString(), "enableJson");
+    EXPECT_EQ(root["note"].asString(), "json_mode: enabled");
+
+    // Check JSON getParticipantProperties
+    ASSERT_TRUE(c.running());
+    writer_stream << "getParticipantProperties " << _system_name << " test_part_0" << std::endl;
+
+    root = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(root.isObject());
+
+    EXPECT_EQ(root["participant_properties"][0]["name"].asString(), "logging");
+    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["name"].asString(),
+              "default_sinks");
+    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["type"].asString(), "string");
+    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["value"].asString(),
+              "console,rpc");
+
+    writer_stream << "disableJson" << std::endl;
+    const std::vector<std::string> expected_answer_disableJson = {"json_mode:", "disabled"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_disableJson));
+
+    // Check default again getParticipantProperties
+    writer_stream << "getParticipantProperties " << _system_name << " test_part_0" << std::endl;
+    ASSERT_TRUE(c.running());
+
+    ASSERT_TRUE(std::getline(reader_stream, line));
+    a_util::strings::trim(line);
+    ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
+    skipUntilPrompt(c, reader_stream);
+}
+
+/**
+ * @brief Test shutdownSystem with exit
+ */
+/**
+ * Test shutdown of a fep system
+ * System will be deinitialized and stoped first
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testShutdown)
+{
+    using namespace std::chrono_literals;
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts, false));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "discoverSystem " << _system_name << std::endl;
+
+    const std::vector<std::string> expected_answer = {
+        _system_name, ":", "test_part_0,", "test_part_1"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer));
+
+    writer_stream << "deinitializeSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_deinitialized = {_system_name, "deinitialized"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_deinitialized));
+
+    writer_stream << "unloadSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_unloaded = {_system_name, "unloaded"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_unloaded));
+
+    writer_stream << "shutdownSystem " << _system_name << std::endl;
+    const std::vector<std::string> expected_answer_shutdown_ok = {_system_name, "shutdowned"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_shutdown_ok));
+
+    writer_stream << "exit" << std::endl;
+
+    std::string str;
+    reader_stream >> str;
+    EXPECT_EQ(str, "bye");
+    reader_stream >> str;
+    EXPECT_EQ(str, "bye");
+    std::this_thread::sleep_for(1s);
+
+    EXPECT_FALSE(c.running());
+}
+
+/**
+ * @brief Test get/setInitPriority
+ */
+/**
+ * Test getting and setting initPriority of a participant
+ *
+ * @req_id          FEPSDK-2969
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testInitPriority)
+{
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts, false));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "discoverAllSystems" << std::endl;
+    std::string ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find(_system_name + ":test_part_0,test_part_1") != std::string::npos);
+
+    // write a InitPriority
+    writer_stream << "setInitPriority " << _system_name << " test_part_0 2" << std::endl;
+    const std::vector<std::string> expected_answer_write = {
+        "priority", "for", "'test_part_0'", "set"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_write));
+
+    // read a InitPriority
+    writer_stream << "getInitPriority " << _system_name << " test_part_0" << std::endl;
+    const std::vector<std::string> expected_answer_read = {"priority", ":", "2"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_read));
+}
+
+/**
+ * @brief Test get/setStartPriority
+ */
+/**
+ * Test getting and setting startPriority of a participant
+ *
+ * @req_id          FEPSDK-2969
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testStartPriority)
+{
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts, false));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "discoverAllSystems" << std::endl;
+    std::string ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find(_system_name + ":test_part_0,test_part_1") != std::string::npos);
+
+    // write a StartPriority
+    writer_stream << "setStartPriority " << _system_name << " test_part_1 3" << std::endl;
+    const std::vector<std::string> expected_answer_write = {
+        "priority", "for", "'test_part_1'", "set"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_write));
+
+    // read a StartPriority
+    writer_stream << "getStartPriority " << _system_name << " test_part_1" << std::endl;
+    const std::vector<std::string> expected_answer_read = {"priority", ":", "3"};
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_read));
 }

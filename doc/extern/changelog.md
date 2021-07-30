@@ -1,5 +1,5 @@
-<!---
-  Copyright @ 2019 Audi AG. All rights reserved.
+<!--
+  Copyright @ 2021 VW Group. All rights reserved.
   
       This Source Code Form is subject to the terms of the Mozilla
       Public License, v. 2.0. If a copy of the MPL was not distributed
@@ -10,17 +10,29 @@
   relevant directory) where a recipient would be likely to look for such a notice.
   
   You may add additional accurate notices of copyright ownership.
+  
   -->
-# FEP SDK Base Utilities Changelog {#fep_sdk_base_utilities_change_log}
+# FEP SDK Base Utilities Changelog
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0) and this project adheres to [Semantic Versioning](https://semver.org/lang/en).
 
-## [Unreleased](https://www.cip.audi.de/jira/issues/?jql=project%3DFEPSDK%20AND%20component%20%3D%20%22fep%20base%20utilities%22%20AND%20level%3D%22public%22%20AND%20status!%3D%22Done%22%20AND%20status!%3DRejected%20)
+## [Unreleased]
 
-Release Notes - FEP Base Utilities - Version 0.1.0 Beta
+## [3.0.1]
+### Changes
+- Using FEP SDK System Library 3.0.1
 
-## [0.1.0-beta](https://www.cip.audi.de/bitbucket/projects/FEPSDK/repos/fep3_base_utilities/browse?at=refs%2Ftags%2Fv0.1.0-beta 
+## [3.0.0]
 
-### Change
-    * [] first Version of utilities with a FEP Control Tool
+### Changes
+- FEPUTILITY-854 FEP Control informs clients about shutdown
+- FEPSDK-2916 Fix properties to use nanoseconds unit
+- FEPSDK-2857 Set pause mode as unsupported
+- FEPSDK-2768 Rename property cycle_time_ms of clock service 
+- FEPSDK-2747 Add Remote Endpoint to FEP SDK Base Utilities
+- FEPSDK-2723 Port to FEP3: Json as return value for fep_control
+- FEPSDK-2721 FEP Control tool command call does not return after the execution
+- FEPSDK-2561 [FEP3] Use the new profiles [gcc5, v141] as base for the delivery packages
+- FEPSDK-2493 shutdown test freeze in FEP control tool
+- FEPSDK-2189 Create a base FEP Control Tool

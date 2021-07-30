@@ -16,18 +16,33 @@ You may add additional accurate notices of copyright ownership.
 
 @endverbatim
  */
-#pragma once
-#include <algorithm>
-#include <cassert>
-#include <cctype>
+
+#ifndef HELPER_H
+#define HELPER_H
+
+#include <fep_system/fep_system.h>
+#include <json/json.h>
 #include <string>
 
-static std::string quoteFilenameIfNecessary(const std::string& file_name)
-{
-    assert(!file_name.empty());
-    if (file_name[0] == '"' ||
-        std::find_if(file_name.begin(), file_name.end(), isspace) == file_name.end()) {
-        return file_name;
+class CompactJsonStream {
+public:
+    CompactJsonStream()
+    {
+        _builder.settings_["indentation"] = "";
     }
-    return "\"" + file_name + "\"";
-}
+    std::string convertJson(const Json::Value& json)
+    {
+        return Json::writeString(_builder, json);
+    }
+
+private:
+    Json::StreamWriterBuilder _builder;
+};
+
+std::vector<std::string> parseLine(const std::string& line);
+
+std::string resolveSystemState(const fep3::System::AggregatedState st);
+
+fep3::SystemAggregatedState getStateFromString(const std::string& state_string);
+
+#endif // HELPER_H
