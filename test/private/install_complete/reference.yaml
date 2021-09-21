@@ -26,7 +26,7 @@ common:
         - doc/html/logging_monitor_console.png
         - doc/html/observing_participant.png
         - doc/html/single_participant_shutdown_command.png
-        - doc/html/doc/extern/license/MPL2.0.txt
+        - doc/html/LICENSE
         - doc/html/doc/extern/license/linenoise.txt
         - fep_base_utilities-config.cmake
         - fep_base_utilities-config-version.cmake
