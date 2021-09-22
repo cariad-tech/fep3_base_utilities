@@ -16,18 +16,25 @@ You may add additional accurate notices of copyright ownership.
 
 @endverbatim
  */
-#pragma once
-#include <algorithm>
-#include <cassert>
-#include <cctype>
-#include <string>
 
-static std::string quoteFilenameIfNecessary(const std::string& file_name)
-{
-    assert(!file_name.empty());
-    if (file_name[0] == '"' ||
-        std::find_if(file_name.begin(), file_name.end(), isspace) == file_name.end()) {
-        return file_name;
-    }
-    return "\"" + file_name + "\"";
-}
+
+#ifndef FEP_CONTROL_COMMANDLINE_H
+#define FEP_CONTROL_COMMANDLINE_H
+
+#include "fep_control.h"
+
+class FepControlCommandLine final : public FepControl {
+public:
+    explicit FepControlCommandLine(bool json_mode);
+
+    void readInputFromSource();
+    void writeOutputToSink(const std::string& output);
+    void writeShutdownMessage();
+
+private:
+    std::vector<std::string> commandNameCompletion(const std::string& word_prefix);
+    std::vector<std::string> commandCompletion(const std::string& input);
+    void printWelcomeMessage();
+};
+
+#endif // FEP_CONTROL_COMMANDLINE_H

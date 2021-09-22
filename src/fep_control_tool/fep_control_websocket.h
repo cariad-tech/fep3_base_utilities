@@ -16,18 +16,26 @@ You may add additional accurate notices of copyright ownership.
 
 @endverbatim
  */
-#pragma once
-#include <algorithm>
-#include <cassert>
-#include <cctype>
-#include <string>
 
-static std::string quoteFilenameIfNecessary(const std::string& file_name)
-{
-    assert(!file_name.empty());
-    if (file_name[0] == '"' ||
-        std::find_if(file_name.begin(), file_name.end(), isspace) == file_name.end()) {
-        return file_name;
-    }
-    return "\"" + file_name + "\"";
-}
+
+#ifndef FEP_CONTROL_WEBSOCKET_H
+#define FEP_CONTROL_WEBSOCKET_H
+
+#include "fep_control.h"
+
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/beast/websocket.hpp>
+
+class FepControlWebsocket final : public FepControl {
+public:
+    FepControlWebsocket(boost::asio::ip::tcp::socket socket, bool json_mode);
+
+    void readInputFromSource();
+    void writeOutputToSink(const std::string& output);
+    void writeShutdownMessage();
+
+private:
+    boost::beast::websocket::stream<boost::asio::ip::tcp::socket> _socket;
+};
+
+#endif // FEP_CONTROL_WEBSOCKET_H
