@@ -27,10 +27,15 @@ You may add additional accurate notices of copyright ownership.
 #include <mutex>
 #include <sstream>
 #include <vector>
+#include <boost/optional.hpp>
 
 class FepControl;
 
 typedef std::vector<std::string>::const_iterator TokenIterator;
+typedef std::pair<std::string, std::string> Attribute;
+typedef std::vector<Attribute> Attributes;
+typedef std::vector<Attributes> AttributesVec;
+
 using ActionFunction = bool (FepControl::*)(TokenIterator first, TokenIterator last);
 using ArgumentCompletionFunction =
     std::vector<std::string> (FepControl::*)(const std::string& input);
@@ -111,21 +116,37 @@ private:
     // helper and ordinary methods
     void discoverSystemByName(const std::string& name);
     std::map<std::string, fep3::System>::iterator getConnectedOrDiscoveredSystem(
-        const std::string& name, const bool auto_discovery);
+        const std::string& name, const bool auto_discovery, const std::string& action);
     std::vector<std::string> usedPropertiesCompletion(const std::string& word_prefix);
     std::vector<std::string> noCompletion(const std::string&);
     std::vector<std::string> localFilesCompletion(const std::string& word_prefix);
     std::vector<std::string> connectedSystemsCompletion(const std::string& word_prefix);
     std::vector<std::string> connectedParticipantsCompletion(const std::string& word_prefix);
+
     void writeNote(const std::string& action, const std::string& note);
-    void writeNote(const std::string& action, const std::pair<std::string, std::string>& attribute);
-    void writeNotes(const std::string& action,
-                    const std::vector<std::pair<std::string, std::string>>& attributes);
+    void writeNote(const std::string& action, const Attribute& attribute);
+    void writeNotes(const std::string& action, const Attributes& attributes);
+    void writeNotes(const std::string& action, const AttributesVec& attributes_vec);
+
     void writeException(const std::string& action,
                         const std::string& exception,
                         const CmdStatus status,
                         const std::exception& e);
-    void dumpSystemParticipants(const std::string& action, const fep3::System& system);
+
+    Attributes getSystemParticipants(const fep3::System& system);
+    AttributesVec getSystems(const std::vector<fep3::System>& systems);
+
+    boost::optional<fep3::ParticipantProxy> getParticipant(const std::string& action, 
+                                                           const std::string& system_name, 
+                                                           const std::string& participant_name);
+    void buildRPCRequest(const std::string& request_name, 
+                         const std::string& request_arguments,
+                         std::string& result);
+
+    void parseJsonString(const std::string& json_string,
+                         Json::Value& result);
+    void sendRPCRequest(fep3::ParticipantProxy participant);
+
 
     // corresponding methods to user commands
     bool discoverAllSystems(TokenIterator first, TokenIterator);
@@ -173,7 +194,7 @@ private:
     bool setSystemState(TokenIterator first, TokenIterator);
     bool getParticipants(TokenIterator first, TokenIterator);
     bool configureSystem(TokenIterator first, TokenIterator);
-    bool quit(TokenIterator, TokenIterator);
+    bool quit(TokenIterator first, TokenIterator);
     bool configureSystemTimingSystemTime(TokenIterator first, TokenIterator);
     bool configureSystemTimingDiscrete(TokenIterator first, TokenIterator);
     bool configureSystemTimeNoSync(TokenIterator first, TokenIterator);
@@ -191,6 +212,7 @@ private:
     bool getRPCObjectsParticipant(TokenIterator first, TokenIterator);
     bool getRPCObjectIIDSParticipant(TokenIterator first, TokenIterator);
     bool getRPCObjectDefinitionParticipant(TokenIterator first, TokenIterator);
+    bool callRPC(TokenIterator first, TokenIterator last);
     bool help(TokenIterator first, TokenIterator last);
     std::vector<std::string> commandNameCompletion(const std::string& word_prefix);
     std::vector<std::string> possibleSystemsStateCompletion(const std::string& word_prefix);

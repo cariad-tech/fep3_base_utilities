@@ -12,6 +12,11 @@
 
 common:
     files:
+        - README.md
+        - doc/license/LICENSE.md
+        - doc/license/list_used_licenses.md
+        - doc/license/used_licenses/.+
+        - doc/license/license_notes_from_aosd.txt
         - doc/changelog.md
         - doc/fep3_base_utilities.html
         - doc/html/.+\.css
@@ -20,18 +25,16 @@ common:
         - doc/html/.+\.md5
         - doc/html/.+\.png
         - doc/html/.+\.svg
+        - doc/html/.+\.dot
         - doc/html/batch_execution.png
         - doc/html/commands_file.png
         - doc/html/fep_control_help.png
         - doc/html/logging_monitor_console.png
         - doc/html/observing_participant.png
         - doc/html/single_participant_shutdown_command.png
-        - doc/html/LICENSE
         - doc/html/doc/extern/license/linenoise.txt
         - fep_base_utilities-config.cmake
         - fep_base_utilities-config-version.cmake
-        - doc/license/used_licenses/.+
-        - doc/license/list_used_licenses.md
         - bin/fep3_system.plugins
 
 linux_shared_debug:
@@ -41,17 +44,17 @@ linux_shared_debug:
             build_type: Debug
     files:
       - bin/fep_control
-      - bin/libfep3_systemd3.0.so
+      - bin/libfep3_systemd3.1.so
       - bin/http/libfep3_http_service_bus.so
 
-linux_shared_relWithDebInfo:
+linux_shared_rel_with_deb_info:
     conditions:
         my_conds:
             os: Linux
             build_type: RelWithDebInfo
     files:
       - bin/fep_control
-      - bin/libfep3_system3.0.so
+      - bin/libfep3_system3.1.so
       - bin/http/libfep3_http_service_bus.so
 
 linux_shared_release:
@@ -61,7 +64,7 @@ linux_shared_release:
             build_type: Release
     files:
       - bin/fep_control
-      - bin/libfep3_system3.0.so
+      - bin/libfep3_system3.1.so
       - bin/http/libfep3_http_service_bus.so
 
 windows_shared_debug:
@@ -71,9 +74,9 @@ windows_shared_debug:
             build_type: Debug
     files:
       - bin/fep_control.exe
-      - bin/fep3_systemd3.0.dll
+      - bin/fep3_systemd3.1.dll
       - bin/http/fep3_http_service_bus.dll
-      - bin/fep3_systemd3.0.pdb
+      - bin/fep3_systemd3.1.pdb
       - bin/http/fep3_http_service_bus.pdb
 
 windows_shared_release:
@@ -83,5 +86,15 @@ windows_shared_release:
             build_type: Release
     files:
       - bin/fep_control.exe
-      - bin/fep3_system3.0.dll
+      - bin/fep3_system3.1.dll
+      - bin/http/fep3_http_service_bus.dll
+
+windows_shared_rel_with_deb_info:
+    conditions:
+        my_conds:
+            os: Windows
+            build_type: RelWithDebInfo
+    files:
+      - bin/fep_control.exe
+      - bin/fep3_system3.1.dll
       - bin/http/fep3_http_service_bus.dll

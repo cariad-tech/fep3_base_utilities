@@ -20,10 +20,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT CMAKE_CXX_STANDARD)
-    message(WARNING "CMAKE_CXX_STANDARD not found, setting it to 14")
-    set(CMAKE_CXX_STANDARD "14")
-elseif(CMAKE_CXX_STANDARD LESS 14)
-    message(FATAL_ERROR "CMAKE_CXX_STANDARD >= 14 required")
+    message(WARNING "CMAKE_CXX_STANDARD not found, setting it to 17")
+    set(CMAKE_CXX_STANDARD "17")
+elseif(CMAKE_CXX_STANDARD LESS 17)
+    message(FATAL_ERROR "CMAKE_CXX_STANDARD >= 17 required")
 endif()
 
 option(fep_base_utilities_cmake_enable_tests "Enable tests - requires googletest (default: ON)" ON)
@@ -75,6 +75,17 @@ if (fep_base_utilities_cmake_enable_tests)
     enable_testing()
     add_subdirectory(test)
 endif()
+
+install(FILES README.md
+        DESTINATION .
+)
+install(FILES LICENSE.md
+        DESTINATION doc/license
+)
+
+install(FILES doc/license/license_notes_from_aosd.txt
+        DESTINATION doc/license
+)
 
 configure_file(fep_base_utilities-config.cmake.in ${CMAKE_BINARY_DIR}/fep_base_utilities-config.cmake @ONLY)
 install(FILES ${CMAKE_BINARY_DIR}/fep_base_utilities-config.cmake DESTINATION .)

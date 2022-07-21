@@ -44,6 +44,50 @@ The FEP Control tool is able to observe the participants RPC info interfaces.
 ![](observing_participant.png)
 &nbsp;
 
+## Use FEP Control to call RPC services
+The FEP Control tool is able to call RPC services of participants directly.
+
+Call RPC service without arguments:
+
+        fep> callRPC my_system my_participant participant_info participant_info.arya.fep3.iid getName
+
+Response exmaple:
+
+        {
+            "id" : 1,
+            "jsonrpc" : "2.0",
+            "result" : "my_participant"
+        }
+
+Call RPC service with arguments, for example `getLoggerFilter`:
+
+        fep> callRPC my_system my_participant logging_service logging_service.arya.fep3.iid getLoggerFilter '{"logger_name":"participant"}'
+
+Response exmaple:
+
+        {
+            "id" : 1,
+            "jsonrpc" : "2.0",
+            "result" :
+            {
+                    "enable_sinks" : "console",
+                    "severity" : 1
+            }
+        }
+
+If setting logger severity by calling `setLoggerFilter`, the request arguments have to be given as a JSON string:
+
+        fep> callRPC my_system my_participant logging_service logging_service.arya.fep3.iid setLoggerFilter '{"logger_name":"participant","severity":1,"enable_sinks":"console,rpc"}'
+
+Response exmaple:
+
+        {
+                "id" : 1,
+                "jsonrpc" : "2.0",
+                "result" : 0
+        }
+&nbsp;
+
 ##Use FEP Control for batch execution
 If the user wants to run multiple commands from a script, it would not be efficient to run a fep_control process with autodiscovery for each command.
 In this case, the piping feature of FEP Control tool may come in handy, i. e. it can process multiple commands sequentially if the user simply feeds

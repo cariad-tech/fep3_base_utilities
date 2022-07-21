@@ -34,6 +34,7 @@ You may add additional accurate notices of copyright ownership.
 #include <json/json.h>
 #include <thread>
 #include <unordered_set>
+#include  <future>
 
 #ifdef _WIN32
 #include "sysinfoapi.h"
@@ -51,42 +52,44 @@ Test clean shutdown if a signal is sent to the application.
 */
 TEST_F(ControlToolWebsocket, testCleanShutdown)
 {
+    std::string fep_control_exec_path = binary_tool_path;
+    // system call won't work with special characters
+    fep_control_exec_path.erase(std::remove(fep_control_exec_path.begin(), fep_control_exec_path.end(), '\"'), fep_control_exec_path.end());
+
     // cannot use boost process here because process must be independent to kill it properly
     // start an independent instance of fep_control
 #ifdef __linux__
-    std::string cmd = binary_tool_path + " --websocket &";
+    std::string cmd = fep_control_exec_path + " --websocket &";
 #elif _WIN32
-    std::string cmd = "start " + binary_tool_path + " --websocket";
+    std::string cmd = "start " + fep_control_exec_path + " --websocket";
 #endif
-
-    // system call won't work with special characters
-    cmd.erase(std::remove(cmd.begin(), cmd.end(), '\"'), cmd.end());
 
     system(cmd.c_str());
 
     ControlToolClient client;
     bool is_connected = client.connectWebsocket();
+    std::future<std::string> receivedMessage = std::async(std::launch::async, [&]() {return client.receiveMessage();});
+
     ASSERT_EQ(is_connected, true);
 
-    std::thread t([]() {
-        // we must wait here for a while to listen for incomming messages before we kill the
-        // application otherwise, EOF flag will be read instead of bye message
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    std::thread t([&]() {
+        std::string window_name = fep_control_exec_path;
+        // window name is the executable path with backslashes
+        std::replace(window_name.begin(), window_name.end(), '/', '\\');
 #ifdef __linux__
         // kill(getProcIdByName("fep_control"), SIGTERM);
         system("pkill -TERM fep_control");
 #elif _WIN32
-        char system32[MAX_PATH];
-        GetSystemDirectoryA(system32, sizeof(system32));
-        std::string path = std::string(system32) + "\\taskkill /IM fep_control.exe";
-        system(path.c_str());
+        HWND hwnd = FindWindow(NULL, window_name.c_str());
+        ASSERT_TRUE(hwnd != NULL) << "FEP Control executable handle not found";
+        SendMessage(hwnd, WM_CLOSE , 0, NULL);
 #endif
     });
 
     try {
         // Wait until shutdown message is received
-        beast::flat_buffer buffer;
-        std::string answer = client.receiveMessage();
+        std::string answer = receivedMessage.get();
+        std::cout << "got message "<< answer << std::endl;
         std::string expected_prefix = "bye";
         ASSERT_EQ(answer.compare(0u, expected_prefix.size(), expected_prefix), 0);
     }
@@ -118,7 +121,7 @@ TEST_F(ControlToolWebsocket, testGetCurrentWorkingDirectory)
         // Test the result
         ASSERT_TRUE(c.running());
         a_util::strings::trim(answer);
-        std::string expected_prefix = "working directory : ";
+        std::string expected_prefix = "working_directory : ";
         ASSERT_EQ(answer.compare(0u, expected_prefix.size(), expected_prefix), 0);
         a_util::filesystem::Path current_dir(answer.substr(expected_prefix.size()));
         EXPECT_TRUE(current_dir.isAbsolute());

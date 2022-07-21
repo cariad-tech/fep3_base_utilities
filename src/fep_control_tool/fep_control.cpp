@@ -25,10 +25,13 @@ You may add additional accurate notices of copyright ownership.
 
 #include <a_util/filesystem.h>
 #include <a_util/strings.h>
+#include <fep_system/rpc_services/rpc_passthrough/rpc_passthrough_intf.h>
+#include <jsonrpccpp/client/rpcprotocolclient.h>
 #include <sstream>
 
 FepControl::FepControl(bool json_mode) : _json_mode(json_mode), monitor(*this, json_mode)
 {
+   fep3::preloadServiceBusPlugin();
 }
 
 void FepControl::discoverSystemByName(const std::string& name)
@@ -44,7 +47,7 @@ void FepControl::discoverSystemByName(const std::string& name)
 }
 
 std::map<std::string, fep3::System>::iterator FepControl::getConnectedOrDiscoveredSystem(
-    const std::string& name, const bool auto_discovery)
+    const std::string& name, const bool auto_discovery, const std::string& action)
 {
     auto it = _connected_or_discovered_systems.find(name);
     if (it != _connected_or_discovered_systems.end()) {
@@ -53,9 +56,13 @@ std::map<std::string, fep3::System>::iterator FepControl::getConnectedOrDiscover
     }
     else if (auto_discovery) {
         discoverSystemByName(name);
-        return getConnectedOrDiscoveredSystem(name, false);
+        return getConnectedOrDiscoveredSystem(name, false, action);
     }
-    writeOutput("system \"", name, "\" is not connected\n");
+
+    const std::string error =
+        "System '" + name + "' is not connected";
+    writeError(action, error, CmdStatus::generic_error, "");
+
     return _connected_or_discovered_systems.end();
 }
 
@@ -84,7 +91,7 @@ std::vector<std::string> FepControl::localFilesCompletion(const std::string& wor
     for (const auto& file_path: file_list) {
         const std::string file_name = file_path.getLastElement().toString();
         if (file_name.compare(0u, word_prefix.size(), word_prefix) == 0) {
-            completions.push_back(quoteFilenameIfNecessary(file_name));
+            completions.push_back(file_name);
         }
     }
     return completions;
@@ -146,11 +153,23 @@ public:
         jsonValue["action"] = action;
         jsonValue["status"] =
             static_cast<typename std::underlying_type<CmdStatus>::type>(cmdStatus);
+        jsonValue["value"] = Json::Value();
     }
-    void setValue(const std::string& type, const std::string& value)
+    void setValue(const std::string& key, const std::string& value)
     {
-        jsonValue[type] = value;
+        jsonValue["value"][key] = value;
     }
+
+    void setValue(const Json::Value& value)
+    {
+        jsonValue["value"] = value;
+    }
+
+    void setValue(const std::string& key, const Json::Value& value)
+    {
+        jsonValue["value"][key] = value;
+    }
+
     const Json::Value& getObject()
     {
         return jsonValue;
@@ -176,7 +195,7 @@ void FepControl::writeNote(const std::string& action, const std::string& note)
 // 'attribute' contains most time a list of elements separated by ','
 // on 'disableJson', attribute and values will be written, separated by ':'
 void FepControl::writeNote(const std::string& action,
-                           const std::pair<std::string, std::string>& attribute)
+                           const Attribute& attribute)
 {
     if (_json_mode) {
         JsonObject jsonObject(action);
@@ -191,8 +210,7 @@ void FepControl::writeNote(const std::string& action,
 // writes a json object with 'action' and arbitrary attributes
 // each pair of attribute / value will be written in a separate line
 // on 'disableJson', a list of all values will be written, separated by ':'
-void FepControl::writeNotes(const std::string& action,
-                            const std::vector<std::pair<std::string, std::string>>& attributes)
+void FepControl::writeNotes(const std::string& action, const Attributes& attributes)
 {
     if (_json_mode) {
         JsonObject jsonObject(action);
@@ -209,6 +227,29 @@ void FepControl::writeNotes(const std::string& action,
         writeOutput(a_util::strings::join(notes, " : "), "\n");
     }
 }
+
+void FepControl::writeNotes(const std::string& action, 
+                            const AttributesVec& attributes_vec) {
+    if (_json_mode) {
+        JsonObject jsonObject(action);
+        Json::Value val;
+        for (const auto& attributes : attributes_vec) {
+            Json::Value tmp;
+            for (const auto& attr : attributes) {
+                tmp[attr.first] = attr.second;
+            }
+            val.append(tmp);
+        }
+        jsonObject.setValue(val);
+        writeOutput(_builder.convertJson(jsonObject.getObject()), "\n");
+    }
+    else {
+        for (const auto& attributes : attributes_vec) {
+            writeNotes(action, attributes);
+        }
+    }
+}
+
 
 // writes a simple json object with 'action', 'error' and optional 'reason'
 // 'error' contains an arbitrary string with advanced information to the error
@@ -245,7 +286,7 @@ void FepControl::writeException(const std::string& action,
     if (_json_mode) {
         JsonObject jsonObject(action, status);
         jsonObject.setValue("exception", exception);
-        jsonObject.setValue("reason", e.what());
+        jsonObject.setValue("reason", (std::string) e.what());
         writeOutput(_builder.convertJson(jsonObject.getObject()), "\n");
     }
     else {
@@ -253,8 +294,7 @@ void FepControl::writeException(const std::string& action,
     }
 }
 
-void FepControl::dumpSystemParticipants(const std::string& action, const fep3::System& system)
-{
+Attributes FepControl::getSystemParticipants(const fep3::System& system) {
     std::string system_name = system.getSystemName();
     if (system_name.empty()) {
         system_name = _empty_system_name;
@@ -264,24 +304,40 @@ void FepControl::dumpSystemParticipants(const std::string& action, const fep3::S
     for (const auto& participant: participants) {
         names.push_back(participant.getName());
     }
-    const std::vector<std::pair<std::string, std::string>> attributes{
-        std::make_pair("system name", system_name),
+
+    Attributes attributes{
+        std::make_pair("system_name", system_name),
         std::make_pair("participants", a_util::strings::join(names, ", ")),
     };
-    writeNotes(action, attributes);
+
+    return attributes;
+}
+
+AttributesVec FepControl::getSystems(const std::vector<fep3::System>& systems) 
+{
+    AttributesVec systems_attrs;
+
+    for (auto& system : systems) {
+        systems_attrs.push_back(getSystemParticipants(system));
+    }
+    return systems_attrs;
 }
 
 bool FepControl::discoverAllSystems(TokenIterator first, TokenIterator)
 {
     auto systems = fep3::discoverAllSystems();
-    for (auto& system: systems) {
-        dumpSystemParticipants(*first, system);
+    auto systems_attrs = getSystems(systems);
+
+    writeNotes(*first, systems_attrs);
+
+    for (auto&& system: systems)
+    {
         std::string system_name = system.getSystemName();
         if (system_name.empty()) {
             // special system name -
             system_name = _empty_system_name;
         }
-        _connected_or_discovered_systems[system_name] = std::move(system);
+        _connected_or_discovered_systems.emplace(system_name, std::move(system));
         // this updates for completion
         _last_system_name_used = system_name;
     }
@@ -298,8 +354,8 @@ bool FepControl::discoverSystem(TokenIterator first, TokenIterator)
         system_name = "";
     }
     auto system = fep3::discoverSystem(system_name);
+    writeNotes(action, getSystemParticipants(system));
 
-    dumpSystemParticipants(action, system);
     _connected_or_discovered_systems[system.getSystemName()] = std::move(system);
     return true;
 }
@@ -311,8 +367,7 @@ bool FepControl::setCurrentWorkingDirectory(TokenIterator first, TokenIterator)
     path.makeCanonical();
     auto result = a_util::filesystem::setWorkingDirectory(path);
     if (result == a_util::filesystem::OK) {
-        writeNote(action,
-                  std::pair<std::string, std::string>("working directory", path.toString()));
+        writeNote(action, Attribute("working_directory", path.toString()));
         return true;
     }
     const std::string error = "cannot set working directory to '" + path.toString() + "'";
@@ -323,8 +378,7 @@ bool FepControl::setCurrentWorkingDirectory(TokenIterator first, TokenIterator)
 bool FepControl::getCurrentWorkingDirectory(TokenIterator first, TokenIterator)
 {
     auto current_path = a_util::filesystem::getWorkingDirectory();
-    writeNote(*first,
-              std::pair<std::string, std::string>("working directory", current_path.toString()));
+    writeNote(*first, Attribute("working_directory", current_path.toString()));
     return true;
 }
 
@@ -335,36 +389,32 @@ bool FepControl::setPriority(TokenIterator first, TokenIterator, const PriorityT
     const std::string participant = *(++first);
     const std::string priority = *(++first);
 
-    auto it = getConnectedOrDiscoveredSystem(system, _auto_discovery_of_systems);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant);
-        if (part) {
+    auto part = getParticipant(action, system, participant);
+
+    if (part) {
+        try {
             switch (type) {
             case PriorityType::init_priority:
-                part.setInitPriority(std::stoi(priority));
+                part->setInitPriority(std::stoi(priority));
                 break;
             case PriorityType::start_priority:
-                part.setStartPriority(std::stoi(priority));
+                part->setStartPriority(std::stoi(priority));
                 break;
             default:
                 assert(false);
             }
             writeNote(action, "priority for '" + participant + "' set");
-            return true;
         }
-        // participant does not exist
-        const std::string error =
-            "participant '" + participant + "' is not in system '" + system + "'";
-        writeError(action, error, CmdStatus::participant_error);
-        return false;
+        catch (const std::exception& e) {
+            const std::string exception =
+                "cannot set priority for '" + participant + "@" + system + "'";
+            writeException(action, exception, CmdStatus::generic_error, e);
+            return false;
+        }
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception =
-            "cannot set priority for '" + participant + "@" + system + "'";
-        writeException(action, exception, CmdStatus::generic_error, e);
+    else
+    {
         return false;
     }
 }
@@ -376,36 +426,32 @@ bool FepControl::getPriority(TokenIterator first, TokenIterator, const PriorityT
     const std::string participant = *(++first);
     int32_t priority = 0;
 
-    auto it = getConnectedOrDiscoveredSystem(system, _auto_discovery_of_systems);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant);
-        if (part) {
+    auto part = getParticipant(action, system, participant);
+
+    if (part) {
+        try {
             switch (type) {
             case PriorityType::init_priority:
-                priority = part.getInitPriority();
+                priority = part->getInitPriority();
                 break;
             case PriorityType::start_priority:
-                priority = part.getStartPriority();
+                priority = part->getStartPriority();
                 break;
             default:
                 assert(false);
             }
             writeNote(action, std::make_pair("priority", std::to_string(priority)));
-            return true;
         }
-        // participant does not exist
-        const std::string error =
-            "participant '" + participant + "' is not in system '" + system + "'";
-        writeError(action, error, CmdStatus::participant_error);
-        return false;
+        catch (const std::exception& e) {
+            const std::string exception =
+                "cannot get priority for '" + participant + "@" + system + "'";
+            writeException(action, exception, CmdStatus::generic_error, e);
+            return false;
+        }
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception =
-            "cannot get priority for '" + participant + "@" + system + "'";
-        writeException(action, exception, CmdStatus::generic_error, e);
+    else
+    {
         return false;
     }
 }
@@ -436,7 +482,7 @@ bool FepControl::changeStateMethod(TokenIterator first,
                                    const std::string& success_message,
                                    const std::string& failed_message)
 {
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
@@ -522,7 +568,7 @@ bool FepControl::startMonitoringSystem(TokenIterator first, TokenIterator)
 {
     const std::string action = *first;
 
-    auto it = getConnectedOrDiscoveredSystem(*(++first), _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(*(++first), _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
@@ -543,7 +589,7 @@ bool FepControl::stopMonitoringSystem(TokenIterator first, TokenIterator)
 {
     const std::string action = *first;
 
-    auto it = getConnectedOrDiscoveredSystem(*(++first), _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(*(++first), _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
@@ -566,7 +612,7 @@ bool FepControl::doParticipantStateChange(
     const std::string& message_1,
     const std::string& message_2)
 {
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
@@ -701,13 +747,13 @@ bool FepControl::shutdownParticipant(TokenIterator first, TokenIterator)
 bool FepControl::getSystemState(TokenIterator first, TokenIterator)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
     try {
         auto state = it->second.getSystemState();
-        const std::vector<std::pair<std::string, std::string>> attributes{
+        const Attributes attributes{
             std::make_pair("stateID", std::to_string(state._state)),
             std::make_pair("stateName", resolveSystemState(state._state)),
             std::make_pair("homogeneous", state._homogeneous ? "homogeneous" : "inhomogeneous"),
@@ -725,7 +771,7 @@ bool FepControl::getSystemState(TokenIterator first, TokenIterator)
 bool FepControl::setSystemState(TokenIterator first, TokenIterator last)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems, action);
     std::string state_string = *std::next(first);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
@@ -753,17 +799,19 @@ bool FepControl::setSystemState(TokenIterator first, TokenIterator last)
 bool FepControl::getParticipants(TokenIterator first, TokenIterator)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
-    dumpSystemParticipants(action, it->second);
+
+    writeNotes(action, getSystemParticipants(it->second));
     return true;
 }
 
-bool FepControl::quit(TokenIterator, TokenIterator)
+bool FepControl::quit(TokenIterator first, TokenIterator)
 {
-    writeOutput("bye bye", "\n");
+    const std::string action = *(first);
+    writeNote(action, "bye bye");
     // we clear that here before any static variable is closed
     _connected_or_discovered_systems.clear();
     exit(0);
@@ -773,7 +821,7 @@ bool FepControl::configureSystemTimingSystemTime(TokenIterator first, TokenItera
 {
     const std::string action = *(first++);
     const std::string master_name = *std::next(first);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
@@ -796,7 +844,7 @@ bool FepControl::configureSystemTimingDiscrete(TokenIterator first, TokenIterato
     const std::string master_name = *(++first);
     const std::string factor = *(++first);
     const std::string step_size = *(++first);
-    auto it = getConnectedOrDiscoveredSystem(system_name, _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(system_name, _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
@@ -816,7 +864,7 @@ bool FepControl::configureSystemTimeNoSync(TokenIterator first, TokenIterator)
 {
     const std::string action = *(first++);
     const std::string system_name = *first;
-    auto it = getConnectedOrDiscoveredSystem(system_name, _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(system_name, _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
@@ -839,14 +887,14 @@ bool FepControl::getCurrentTimingMaster(TokenIterator first, TokenIterator)
     const std::string action = *(first++);
     const std::string system_name = *first;
 
-    auto it = getConnectedOrDiscoveredSystem(system_name, _auto_discovery_of_systems);
+    auto it = getConnectedOrDiscoveredSystem(system_name, _auto_discovery_of_systems, action);
     if (it == _connected_or_discovered_systems.end()) {
         return false;
     }
     try {
         auto masters = it->second.getCurrentTimingMasters();
         auto masters_string = a_util::strings::join(masters, ",");
-        writeNote(action, std::pair<std::string, std::string>("timing masters", masters_string));
+        writeNote(action, Attribute("timing_masters", masters_string));
     }
     catch (const std::exception& e) {
         const std::string exception = "cannot get timing master for '" + system_name + "'";
@@ -890,19 +938,16 @@ bool FepControl::getParticipantState(TokenIterator first, TokenIterator)
 {
     const std::string action = *(first++);
     const std::string system_name = *(first);
-    auto it = getConnectedOrDiscoveredSystem(system_name, _auto_discovery_of_systems);
     const std::string participant_name = *std::next(first);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant_name);
-        if (part) {
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) {
+        try {
             auto state_machine =
-                part.getRPCComponentProxy<fep3::rpc::IRPCParticipantStateMachine>();
+                part->getRPCComponentProxy<fep3::rpc::IRPCParticipantStateMachine>();
             if (state_machine) {
                 auto value = state_machine->getState();
-                const std::vector<std::pair<std::string, std::string>> attributes{
+                const Attributes attributes{
                     std::make_pair("stateID", std::to_string(value)),
                     std::make_pair("stateName", resolveSystemState(value)),
                 };
@@ -915,35 +960,31 @@ bool FepControl::getParticipantState(TokenIterator first, TokenIterator)
                 return false;
             }
         }
-        else {
-            const std::string error =
-                "participant '" + participant_name + "' is not in system '" + *first + "'";
-            writeError(action, error, CmdStatus::participant_error);
+        catch (const std::exception& e) {
+            const std::string exception = "cannot get participant state for participant '" +
+                                          participant_name + "@" + *first + "'";
+            writeException(action, exception, CmdStatus::participant_error, e);
             return false;
         }
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception = "cannot get participant state for participant '" +
-                                      participant_name + "@" + *first + "'";
-        writeException(action, exception, CmdStatus::participant_error, e);
+    else
+    {
         return false;
     }
-    return true;
 }
 
 bool FepControl::setParticipantState(TokenIterator first, TokenIterator last)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
     const std::string system_name = *first;
     const std::string participant_name = *(++first);
     const std::string state_string = *(++first);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant_name);
-        if (part) {
+
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) {
+        try {
             // create a second temporary system with only one participant
             fep3::System system_temp(system_name);
             system_temp.add(participant_name);
@@ -956,26 +997,24 @@ bool FepControl::setParticipantState(TokenIterator first, TokenIterator last)
             else {
                 system_temp.setSystemState(state_to_set);
             }
-            const std::vector<std::pair<std::string, std::string>> attributes{
+            const Attributes attributes{
                 std::make_pair("stateID", std::to_string(state_to_set)),
                 std::make_pair("stateName", resolveSystemState(state_to_set))};
             writeNotes(action, attributes);
         }
-        else {
-            const std::string error =
-                "participant '" + participant_name + "' is not in system '" + system_name + "'";
-            writeError(action, error, CmdStatus::participant_error);
+        catch (const std::exception& e) {
+            const std::string exception = "cannot set participant state" + state_string +
+                                          "for participant '" + participant_name + "@" + system_name +
+                                          "'";
+            writeException(action, exception, CmdStatus::participant_error, e);
             return false;
         }
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception = "cannot set participant state" + state_string +
-                                      "for participant '" + participant_name + "@" + system_name +
-                                      "'";
-        writeException(action, exception, CmdStatus::participant_error, e);
+    else
+    {
         return false;
     }
-    return true;
 }
 
 template <typename T>
@@ -1086,22 +1125,22 @@ static std::pair<std::string, std::string> getNodeAndLeafNamefromProperty(
 bool FepControl::getParticipantPropertyNames(TokenIterator first, TokenIterator)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
+    const std::string system_name = *first;
     const std::string participant_name = *std::next(first);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
 
-    try {
-        auto part = it->second.getParticipant(participant_name);
-        if (part) {
-            auto conf = part.getRPCComponentProxy<fep3::rpc::IRPCConfiguration>();
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) {
+        try {
+            auto conf = part->getRPCComponentProxy<fep3::rpc::IRPCConfiguration>();
             if (conf) {
                 if (_json_mode) {
                     Json::Value root;
                     root["action"] = action;
                     root["status"] = static_cast<typename std::underlying_type<CmdStatus>::type>(
                         CmdStatus::no_error);
+
+                    Json::Value properties;
 
                     traverseProperties<Json::Value>(
                         conf,
@@ -1117,7 +1156,10 @@ bool FepControl::getParticipantPropertyNames(TokenIterator first, TokenIterator)
                             prop["type"] = type;
                             return &(*parent_json)["sub_properties"].append(prop);
                         },
-                        &root);
+                        & properties);
+
+                    root["value"]["participant"] = participant_name;
+                    root["value"]["participant_properties"] = properties["sub_properties"];
                     writeOutput(_builder.convertJson(root), "\n");
                 }
                 else {
@@ -1139,36 +1181,30 @@ bool FepControl::getParticipantPropertyNames(TokenIterator first, TokenIterator)
                 }
             }
         }
-        else {
-            const std::string error =
-                "participant '" + participant_name + "' is not in system '" + *first + "'";
-            writeError(action, error, CmdStatus::participant_error);
+        catch (const std::exception& e) {
+            const std::string exception =
+                "cannot get property names for participant '" + participant_name + "@" + *first + "'";
+            writeException(action, exception, CmdStatus::participant_error, e);
             return false;
         }
+        return true;
     }
-
-    catch (const std::exception& e) {
-        const std::string exception =
-            "cannot get property names for participant '" + participant_name + "@" + *first + "'";
-        writeException(action, exception, CmdStatus::participant_error, e);
+    else {
         return false;
     }
-    return true;
 }
 
 bool FepControl::getParticipantProperties(TokenIterator first, TokenIterator)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
     const std::string system_name = *first;
     const std::string participant_name = *std::next(first);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant_name);
-        if (part) {
-            auto conf = part.getRPCComponentProxy<fep3::rpc::IRPCConfiguration>();
+
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) {
+        try {
+            auto conf = part->getRPCComponentProxy<fep3::rpc::IRPCConfiguration>();
             if (conf) {
                 if (_json_mode) {
                     Json::Value participant_properties = formatPropertyJson(action, conf, "", "");
@@ -1177,8 +1213,8 @@ bool FepControl::getParticipantProperties(TokenIterator first, TokenIterator)
                     output["action"] = action;
                     output["status"] = static_cast<typename std::underlying_type<CmdStatus>::type>(
                         CmdStatus::no_error);
-                    output["participant"] = participant_name;
-                    output["participant_properties"] = participant_properties;
+                    output["value"]["participant"] = participant_name;
+                    output["value"]["participant_properties"] = participant_properties;
 
                     writeOutput(_builder.convertJson(output), "\n");
                 }
@@ -1193,36 +1229,31 @@ bool FepControl::getParticipantProperties(TokenIterator first, TokenIterator)
                 return false;
             }
         }
-        else {
-            const std::string error =
-                "participant '" + participant_name + "' is not in system '" + system_name + "'";
-            writeError(action, error, CmdStatus::participant_error);
+        catch (const std::exception& e) {
+            const std::string exception =
+                "cannot get properties for participant '" + participant_name + "@" + system_name + "'";
+            writeException(action, exception, CmdStatus::participant_error, e);
             return false;
         }
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception =
-            "cannot get properties for participant '" + participant_name + "@" + system_name + "'";
-        writeException(action, exception, CmdStatus::participant_error, e);
+    else {
         return false;
     }
-    return true;
 }
 
 bool FepControl::getParticipantProperty(TokenIterator first, TokenIterator last)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
     const std::string system_name = *first;
     const std::string participant_name = *(++first);
     const std::string property_path = *(++first);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant_name);
-        if (part) {
-            auto conf = part.getRPCComponentProxy<fep3::rpc::IRPCConfiguration>();
+
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) {
+        try {
+            auto conf = part->getRPCComponentProxy<fep3::rpc::IRPCConfiguration>();
             if (conf) {
                 auto split_path = getNodeAndLeafNamefromProperty(property_path);
                 auto node = split_path.first;
@@ -1232,13 +1263,19 @@ bool FepControl::getParticipantProperty(TokenIterator first, TokenIterator last)
                     Json::Value participant_property =
                         formatPropertyJson(action, conf, node, leaf_name);
 
+                    if ((node.empty() || leaf_name.empty()) && !(node.empty() && leaf_name.empty()))
+                    {
+                        participant_property["name"] = node.empty()? leaf_name : node;
+                        participant_property["type"] = "node";
+                        participant_property["value"] = "";
+                    }
+
                     Json::Value output;
                     output["action"] = action;
                     output["status"] = static_cast<typename std::underlying_type<CmdStatus>::type>(
                         CmdStatus::no_error);
-                    output["name"] = participant_property["name"];
-                    output["value"] = participant_property["value"];
-                    output["type"] = participant_property["type"];
+                    output["value"]["participant"] = participant_name;
+                    output["value"]["participant_property"] = participant_property;
                     writeOutput(_builder.convertJson(output), "\n");
                 }
                 else {
@@ -1258,38 +1295,33 @@ bool FepControl::getParticipantProperty(TokenIterator first, TokenIterator last)
                 return false;
             }
         }
-        else {
-            const std::string error =
-                "participant '" + participant_name + "' is not in system '" + system_name + "'";
-            writeError(action, error, CmdStatus::participant_error);
+        catch (const std::exception& e) {
+            const std::string exception = "cannot get property " + property_path +
+                                          " for participant '" + participant_name + "@" + system_name +
+                                          "'";
+            writeException(action, exception, CmdStatus::participant_error, e);
             return false;
         }
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception = "cannot get property " + property_path +
-                                      " for participant '" + participant_name + "@" + system_name +
-                                      "'";
-        writeException(action, exception, CmdStatus::participant_error, e);
+    else {
         return false;
     }
-    return true;
 }
 
 bool FepControl::setParticipantProperty(TokenIterator first, TokenIterator last)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
     const std::string system_name = *first;
     const std::string participant_name = *(++first);
     const std::string property_path = *(++first);
     std::string property_value = *(++first);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant_name);
-        if (part) {
-            auto conf = part.getRPCComponentProxy<fep3::rpc::IRPCConfiguration>();
+
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) {
+        try {
+            auto conf = part->getRPCComponentProxy<fep3::rpc::IRPCConfiguration>();
             if (conf) {
                 auto split_path = getNodeAndLeafNamefromProperty(property_path);
                 auto node = split_path.first;
@@ -1320,40 +1352,34 @@ bool FepControl::setParticipantProperty(TokenIterator first, TokenIterator last)
                 return false;
             }
         }
-        else {
-            const std::string error =
-                "participant '" + participant_name + "' is not in system '" + system_name + "'";
-            writeError(action, error, CmdStatus::participant_error);
+        catch (const std::exception& e) {
+            const std::string exception = "cannot set property " + property_path + " for participant '" +
+                                          participant_name + "@" + system_name + "'";
+            writeException(action, exception, CmdStatus::participant_error, e);
             return false;
         }
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception = "cannot set property" + property_path + " for participant '" +
-                                      participant_name + "@" + system_name + "'";
-        writeException(action, exception, CmdStatus::participant_error, e);
+    else
+    {
         return false;
     }
-    return true;
 }
 
 bool FepControl::getRPCObjectsParticipant(TokenIterator first, TokenIterator last)
 {
     const std::string action = *(first++);
     const std::string system_name = *(first);
-    auto it = getConnectedOrDiscoveredSystem(system_name, _auto_discovery_of_systems);
     const std::string participant_name = *std::next(first);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant_name);
-        if (part) {
-            auto info = part.getRPCComponentProxy<fep3::rpc::IRPCParticipantInfo>();
+
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) {
+        try {
+            auto info = part->getRPCComponentProxy<fep3::rpc::IRPCParticipantInfo>();
             if (info) {
                 auto value = info->getRPCComponents();
-                writeNote(action,
-                          std::pair<std::string, std::string>("names",
-                                                              a_util::strings::join(value, ", ")));
+                writeNote(action, Attribute("names", a_util::strings::join(value, ", ")));
             }
             else {
                 const std::string error =
@@ -1362,42 +1388,37 @@ bool FepControl::getRPCObjectsParticipant(TokenIterator first, TokenIterator las
                 return false;
             }
         }
-        else {
-            const std::string error =
-                "participant '" + participant_name + "' is not in system '" + system_name + "'";
-            writeError(action, error, CmdStatus::rpcobject_error);
+        catch (const std::exception& e) {
+            const std::string exception = "cannot get participant state for participant '" +
+                                          participant_name + "@" + system_name + "'";
+            writeException(action, exception, CmdStatus::rpcobject_error, e);
             return false;
         }
+
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception = "cannot get participant state for participant '" +
-                                      participant_name + "@" + system_name + "'";
-        writeException(action, exception, CmdStatus::rpcobject_error, e);
+    else
+    {
         return false;
     }
-    return true;
 }
 
 bool FepControl::getRPCObjectIIDSParticipant(TokenIterator first, TokenIterator last)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
     const std::string system_name = *(first);
     const std::string participant_name = *(++first);
     const std::string object_name = *(++first);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant_name);
-        if (part) {
-            auto info = part.getRPCComponentProxy<fep3::rpc::IRPCParticipantInfo>();
+
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) {
+        try {
+            auto info = part->getRPCComponentProxy<fep3::rpc::IRPCParticipantInfo>();
             if (info) {
                 try {
                     auto value = info->getRPCComponentIIDs(object_name);
-                    writeNote(action,
-                              std::pair<std::string, std::string>(
-                                  "identifiers", a_util::strings::join(value, ", ")));
+                    writeNote(action, Attribute("identifiers", a_util::strings::join(value, ", ")));
                 }
                 catch (const std::exception&) {
                     const std::string exception = "participant '" + participant_name + "@" +
@@ -1413,41 +1434,37 @@ bool FepControl::getRPCObjectIIDSParticipant(TokenIterator first, TokenIterator 
                 return false;
             }
         }
-        else {
-            const std::string error =
-                "participant '" + participant_name + "' is not in system '" + system_name + "'";
-            writeError(action, error, CmdStatus::rpcobject_error);
+        catch (const std::exception& e) {
+            const std::string exception = "cannot get participant state for participant '" +
+                                          participant_name + "@" + system_name + "'";
+            writeException(action, exception, CmdStatus::rpcobject_error, e);
             return false;
         }
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception = "cannot get participant state for participant '" +
-                                      participant_name + "@" + system_name + "'";
-        writeException(action, exception, CmdStatus::rpcobject_error, e);
+    else
+    {
         return false;
     }
-    return true;
 }
 
 bool FepControl::getRPCObjectDefinitionParticipant(TokenIterator first, TokenIterator last)
 {
     const std::string action = *(first++);
-    auto it = getConnectedOrDiscoveredSystem(*first, _auto_discovery_of_systems);
     const std::string system_name = *(first);
     const std::string participant_name = *(++first);
     const std::string object_name = *(++first);
     const std::string intf_name = *(++first);
-    if (it == _connected_or_discovered_systems.end()) {
-        return false;
-    }
-    try {
-        auto part = it->second.getParticipant(participant_name);
-        if (part) {
-            auto info = part.getRPCComponentProxy<fep3::rpc::IRPCParticipantInfo>();
+
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) {
+        try {
+            auto info = part->getRPCComponentProxy<fep3::rpc::IRPCParticipantInfo>();
             if (info) {
                 try {
                     auto value = info->getRPCComponentInterfaceDefinition(object_name, intf_name);
-                    writeNote(action, std::pair<std::string, std::string>("definition", value));
+                    writeNote(action, Attribute("definition", value));
                 }
                 catch (const std::exception& e) {
                     const std::string exception = "participant '" + participant_name + "@" +
@@ -1463,20 +1480,136 @@ bool FepControl::getRPCObjectDefinitionParticipant(TokenIterator first, TokenIte
                 return false;
             }
         }
-        else {
-            const std::string error =
-                "participant '" + participant_name + "' is not in system '" + system_name + "'";
-            writeError(action, error, CmdStatus::rpcobject_error);
+        catch (const std::exception& e) {
+            const std::string exception = "cannot get participant state for participant '" +
+                                          participant_name + "@" + system_name + "'";
+            writeException(action, exception, CmdStatus::rpcobject_error, e);
             return false;
         }
+        return true;
     }
-    catch (const std::exception& e) {
-        const std::string exception = "cannot get participant state for participant '" +
-                                      participant_name + "@" + system_name + "'";
-        writeException(action, exception, CmdStatus::rpcobject_error, e);
+    else {
         return false;
     }
-    return true;
+}
+
+bool FepControl::callRPC(TokenIterator first, TokenIterator last)
+{
+    const std::string action = *(first++);
+    const std::string system_name = *(first);
+    const std::string participant_name = *(++first);
+    const std::string service_name = *(++first);
+    const std::string service_iid = *(++first);
+    const std::string function_name = *(++first);
+    std::string function_arguments = "";
+    
+    // read the last optional argument as function parameters 
+    if (first + 1 < last) 
+    {
+        function_arguments = *(++first);
+    }
+
+    auto part = getParticipant(action, system_name, participant_name);
+
+    if (part) 
+    {
+        try {
+            // build request
+            std::string request, response;
+            buildRPCRequest(function_name, function_arguments, request);
+
+            // call rpc request 
+            fep3::rpc::RPCClient<fep3::rpc::experimental::IRPCPassthrough> rpc_passthrough;
+            part->getRPCComponentProxy(service_name, 
+                                       fep3::rpc::getRPCIID<fep3::rpc::experimental::IRPCPassthrough>(), 
+                                       rpc_passthrough);
+
+            if (rpc_passthrough->call(request, response))
+            {
+                Json::Value json_response;
+                parseJsonString(response, json_response);
+
+                Json::Value output;
+                output["action"] = action;
+                output["status"] = static_cast<typename std::underlying_type<CmdStatus>::type>(
+                    CmdStatus::no_error);
+                output["value"] = json_response;
+                writeOutput(output, "\n");
+            }
+            else
+            {
+                throw std::runtime_error("RPC call failed");
+            }
+        }
+        catch (const std::exception& e) {
+            const std::string exception_msg = "participant '" + participant_name + "@" + 
+                                              system_name + "' with RPC service '" + 
+                                              service_name + "' failed to execute function'" + 
+                                              function_name + "'";
+            writeException(action, exception_msg, CmdStatus::rpcobject_error, e);
+            return false;
+        }
+
+        return true;
+    }
+    else {
+        return false;
+    } 
+}
+
+void FepControl::buildRPCRequest(const std::string& request_name, 
+                                 const std::string& request_arguments, 
+                                 std::string& result)
+{
+    Json::Value request_parameters;
+    auto protocal = new jsonrpc::RpcProtocolClient();
+    parseJsonString(request_arguments, request_parameters);
+    protocal->BuildRequest(request_name, request_parameters, result, false);
+}
+
+void FepControl::parseJsonString(const std::string& json_string, Json::Value& result)
+{
+    Json::CharReaderBuilder builder;
+    std::unique_ptr<Json::CharReader> const reader(builder.newCharReader());
+    std::string parse_errors;
+
+    if (!json_string.empty() && 
+        !reader->parse(json_string.c_str(), 
+                       json_string.c_str() + json_string.size(), 
+                       &result, 
+                       &parse_errors))
+
+    {
+        throw std::runtime_error("JSON parameters can not be parsed: " + parse_errors);
+    }
+}
+
+boost::optional<fep3::ParticipantProxy> FepControl::getParticipant(const std::string& action, 
+                                                                   const std::string& system_name, 
+                                                                   const std::string& participant_name) 
+{
+    boost::optional<fep3::ParticipantProxy> participant;
+    auto it = getConnectedOrDiscoveredSystem(system_name, _auto_discovery_of_systems, action);
+    if (it == _connected_or_discovered_systems.end()) {
+        return participant; // not found, return empty value
+    }
+
+    try
+    {
+        // getParticipant always throw exception when not found
+        participant = it->second.getParticipant(participant_name);
+    }
+    catch (const std::exception& e) {
+        const std::string exception_msg = 
+            "participant '" + participant_name + 
+            "' is not in system '" + system_name + "'. " + 
+            "Is it in another system? Try to run 'discoverSystem " + 
+            system_name + "' or 'discoverAllSystems'.";
+
+        writeException(action, exception_msg, CmdStatus::generic_error, e);
+    }
+
+    return participant;
 }
 
 std::vector<ControlCommand>::const_iterator FepControl::findCommand(
@@ -1502,6 +1635,7 @@ std::vector<std::string> FepControl::commandNameCompletion(const std::string& wo
 
 bool FepControl::help(TokenIterator first, TokenIterator last)
 {
+    const std::string action = *(first);
     std::stringstream output;
 
     if (++first == last) {
@@ -1528,7 +1662,7 @@ bool FepControl::help(TokenIterator first, TokenIterator last)
         output << " : " << it->_description << "\n";
     }
 
-    writeOutput(output.str());
+    writeNote(action, output.str());
 
     return true;
 }
@@ -1810,6 +1944,16 @@ const std::vector<ControlCommand>& FepControl::getControlCommands() const noexce
                        &FepControl::getParticipants,
                        {{"system name", &FepControl::connectedSystemsCompletion}},
                        0u},
+        ControlCommand{"callRPC",
+                       "Transmit a RPC call and wait for it's response",
+                       &FepControl::callRPC,
+                       {{"system name", &FepControl::connectedSystemsCompletion},
+                        {"participant name", &FepControl::connectedParticipantsCompletion},
+                        {"service name", &FepControl::noCompletion},
+                        {"service iid", &FepControl::noCompletion},
+                        {"function name", &FepControl::noCompletion},
+                        {"arguments", &FepControl::noCompletion}},
+                        1u},
         ControlCommand{"configureTiming3SystemTime",
                        "configures the given system for timing"
                        " System Time (Sync only to the master)",

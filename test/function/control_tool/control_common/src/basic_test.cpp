@@ -127,6 +127,7 @@ TEST_F(ControlTool, testHelp)
         "getParticipantState",
         "setParticipantState",
         "getParticipants",
+        "callRPC",
         "configureTiming3SystemTime",
         "configureTiming3DiscreteTime",
         "configureTiming3NoSync",
@@ -192,7 +193,7 @@ TEST_F(ControlTool, testGetCurrentWorkingDirectory)
     ASSERT_TRUE(c.running());
     ASSERT_TRUE(std::getline(reader_stream, line));
     a_util::strings::trim(line);
-    std::string expected_prefix = "working directory : ";
+    std::string expected_prefix = "working_directory : ";
     ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
     a_util::filesystem::Path current_dir(line.substr(expected_prefix.size()));
     EXPECT_TRUE(current_dir.isAbsolute());
@@ -220,12 +221,12 @@ TEST_F(ControlTool, testSetCurrentWorkingDirectory)
 
     std::string line;
     const auto new_path = current_path + "files";
-    writer_stream << "setCurrentWorkingDirectory " << quoteFilenameIfNecessary(new_path.toString())
+    writer_stream << "setCurrentWorkingDirectory " << quoteNameIfNecessary(new_path.toString())
                   << std::endl;
     ASSERT_TRUE(c.running());
     ASSERT_TRUE(std::getline(reader_stream, line));
     a_util::strings::trim(line);
-    std::string expected_prefix = "working directory : ";
+    std::string expected_prefix = "working_directory : ";
     ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
     a_util::filesystem::Path returned_new_path(line.substr(expected_prefix.size()));
     ASSERT_TRUE(returned_new_path.isAbsolute());
@@ -374,7 +375,7 @@ TEST_F(ControlTool, testSystemHandling)
 
     writer_stream << "getSystemState " << _system_name << std::endl;
     const std::vector<std::string> expected_not_connected = {
-        "system", "\"" + _system_name + "\"", "is", "not", "connected"};
+        "System", "'" + _system_name + "'", "is", "not", "connected"};
     EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_not_connected));
 
     closeSession(c, writer_stream);
@@ -494,7 +495,7 @@ TEST_F(ControlTool, testCommandlineArgument)
     std::string line;
     ASSERT_TRUE(std::getline(reader_stream, line));
     a_util::strings::trim(line);
-    std::string expected_prefix = "working directory : ";
+    std::string expected_prefix = "working_directory : ";
     ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
     a_util::filesystem::Path current_dir(line.substr(expected_prefix.size()));
     EXPECT_TRUE(current_dir.isAbsolute());
@@ -733,6 +734,144 @@ TEST_F(ControlTool, testProperties)
 }
 
 /**
+ * Test property handling of a participant
+ * sets and gets properties of a participant
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+TEST_F(ControlTool, testProperties_json)
+{
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts, false));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    // Enable Json Mode first
+    writer_stream << "enableJson" << std::endl;
+    auto root = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(root.isObject());
+    EXPECT_EQ(root["action"].asString(), "enableJson");
+    EXPECT_EQ(root["value"]["note"].asString(), "json_mode: enabled") << "enableJson";
+
+
+    writer_stream << "discoverSystem " << _system_name << std::endl;
+    auto ret = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(ret.isObject());
+    EXPECT_EQ(ret["action"].asString(), "discoverSystem");
+    EXPECT_EQ(ret["value"]["system_name"].asString(), _system_name);
+    EXPECT_EQ(ret["value"]["participants"].asString(), "test_part_0, test_part_1");
+
+
+    // Read a Property leaf
+    writer_stream << "getParticipantProperty " << _system_name
+        << " test_part_0 clock" << std::endl;
+    auto ret_2 = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(ret_2.isObject());
+    EXPECT_EQ(ret_2["action"].asString(), "getParticipantProperty");
+    EXPECT_EQ(ret_2["value"]["participant_property"]["sub_properties"][0]["name"].asString(), "main_clock");
+    EXPECT_EQ(ret_2["value"]["participant_property"]["sub_properties"][0]["value"].asString(), "local_system_realtime");
+    EXPECT_EQ(ret_2["value"]["participant_property"]["sub_properties"][1]["name"].asString(), "time_update_timeout");
+    EXPECT_EQ(ret_2["value"]["participant_property"]["sub_properties"][1]["value"].asString(), "5000000000");
+    EXPECT_EQ(ret_2["value"]["participant_property"]["sub_properties"][2]["name"].asString(), "time_factor");
+    EXPECT_EQ(ret_2["value"]["participant_property"]["sub_properties"][2]["value"].asString(), "1.000000");
+    EXPECT_EQ(ret_2["value"]["participant_property"]["sub_properties"][3]["name"].asString(), "step_size");
+    EXPECT_EQ(ret_2["value"]["participant_property"]["sub_properties"][3]["value"].asString(), "100000000");
+
+
+    // Read the Property
+    writer_stream << "getParticipantProperty " << _system_name
+        << " test_part_0 clock/main_clock" << std::endl;
+    auto ret_3 = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(ret_3.isObject());
+    EXPECT_EQ(ret_3["action"].asString(), "getParticipantProperty");
+    EXPECT_EQ(ret_3["value"]["participant_property"]["name"].asString(), "main_clock");
+    EXPECT_EQ(ret_3["value"]["participant_property"]["value"].asString(), "local_system_realtime");
+
+    closeSession(c, writer_stream);
+}
+
+
+/**
+ * Test getting a non existent property via 'getParticipantProperty'
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        negative test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected error message
+ */
+TEST_F(ControlTool, testGetPropertyInvalidPath)
+{
+	TestParticipants test_parts;
+	ASSERT_TRUE(createSystem(test_parts, false));
+
+	bp::opstream writer_stream;
+	bp::ipstream reader_stream;
+	bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+	skipUntilPrompt(c, reader_stream);
+
+	writer_stream << "discoverAllSystems" << std::endl;
+	std::string ss = getStreamUntilPromt(c, reader_stream);
+	EXPECT_TRUE(ss.find(_system_name + ":test_part_0,test_part_1") != std::string::npos);
+
+	writer_stream << "getParticipantProperty " << _system_name
+		<< " test_part_0 "
+		"foo"
+		<< std::endl;
+	const std::vector<std::string> expected_answer_set_node = { "cannot", "get", "property", "foo", "Property", "'foo'", "does", "not", "exist." };
+	EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_set_node));
+
+	closeSession(c, writer_stream);
+}
+
+/**
+ * Test setting a non existent property via 'setParticipantProperty'
+ *
+ * @req_id          ???
+ * @testData        FEP_SYSTEM
+ * @testType        negative test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected error message
+ */
+TEST_F(ControlTool, testSetPropertyInvalidPath)
+{
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts, false));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+    bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "discoverAllSystems" << std::endl;
+    std::string ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find(_system_name + ":test_part_0,test_part_1") != std::string::npos);
+
+	writer_stream << "setParticipantProperty " << _system_name
+		<< " test_part_0 "
+		"foo 1"
+		<< std::endl;
+	const std::vector<std::string> expected_answer_set_node = { "cannot", "set", "property", "foo", "Property", "'foo'", "does", "not", "exist." };
+	EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_set_node));
+
+    closeSession(c, writer_stream);
+}
+
+/**
  * Test handling of timing master of the system
  * execute get and configure functions for master
  *
@@ -760,7 +899,7 @@ TEST_F(ControlTool, testTimingMaster)
 
     writer_stream << "getCurrentTimingMaster " << _system_name << std::endl;
     const std::vector<std::string> expected_answer_empty_timing_masters = {
-        "timing", "masters", ":"};
+        "timing_masters", ":"};
     EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_empty_timing_masters));
 
     writer_stream << "configureTiming3SystemTime " << _system_name << " test_part_0" << std::endl;
@@ -770,7 +909,7 @@ TEST_F(ControlTool, testTimingMaster)
 
     writer_stream << "getCurrentTimingMaster " << _system_name << std::endl;
     const std::vector<std::string> expected_answer_part0_timing_masters = {
-        "timing", "masters", ":", "test_part_0"};
+        "timing_masters", ":", "test_part_0"};
     EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_part0_timing_masters));
 
     writer_stream << "configureTiming3NoSync " << _system_name << std::endl;
@@ -789,7 +928,7 @@ TEST_F(ControlTool, testTimingMaster)
 
     writer_stream << "getCurrentTimingMaster " << _system_name << std::endl;
     const std::vector<std::string> expected_answer_part1_timing_masters = {
-        "timing", "masters", ":", "test_part_1"};
+        "timing_masters", ":", "test_part_1"};
     EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_part1_timing_masters));
 
     closeSession(c, writer_stream);
@@ -818,7 +957,7 @@ TEST_F(ControlTool, testAutoDiscovery)
 
     writer_stream << "getSystemState " << _system_name << std::endl;
     const std::vector<std::string> expected_answer_not_connected = {
-        "system", "\"" + _system_name + "\"", "is", "not", "connected"};
+        "System", "'" + _system_name + "'", "is", "not", "connected"};
     EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_not_connected));
 
     writer_stream << "disableAutoDiscovery" << std::endl;
@@ -863,33 +1002,25 @@ TEST_F(ControlTool, testJsonProperties)
     skipUntilPrompt(c, reader_stream);
 
     writer_stream << "discoverAllSystems" << std::endl;
-    std::string ss = getStreamUntilPromt(c, reader_stream);
-
-    auto roots = readJsonArray(ss);
-    bool system_found = false;
-    for (auto& root: roots) {
-        ASSERT_TRUE(root.isObject());
-        std::string t1 = root["systemname"].asString();
-        if (root["systemname"].asString() == _system_name) {
-            EXPECT_EQ(root["action"].asString(), "discoverAllSystems");
-            EXPECT_EQ(root["participants"].asString(), "test_part_0,test_part_1");
-            system_found = true;
-        }
-    }
-    ASSERT_TRUE(system_found);
+    auto root = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(root.isObject());
+    EXPECT_EQ(root["action"].asString(), "discoverAllSystems");
+    EXPECT_EQ(root["value"][0]["participants"].asString(), "test_part_0, test_part_1");
+    EXPECT_EQ(root["value"][0]["system_name"].asString(), _system_name);
 
     ASSERT_TRUE(c.running());
     writer_stream << "getParticipantProperties " << _system_name << " test_part_0" << std::endl;
 
-    auto root = readJsonArray(reader_stream);
+    root = readJsonArray(reader_stream);
     skipUntilPrompt(c, reader_stream);
     ASSERT_TRUE(root.isObject());
 
-    EXPECT_EQ(root["participant_properties"][0]["name"].asString(), "logging");
-    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["name"].asString(),
+    EXPECT_EQ(root["value"]["participant_properties"][0]["name"].asString(), "logging");
+    EXPECT_EQ(root["value"]["participant_properties"][0]["sub_properties"][0]["name"].asString(),
               "default_sinks");
-    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["type"].asString(), "string");
-    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["value"].asString(),
+    EXPECT_EQ(root["value"]["participant_properties"][0]["sub_properties"][0]["type"].asString(), "string");
+    EXPECT_EQ(root["value"]["participant_properties"][0]["sub_properties"][0]["value"].asString(),
               "console,rpc");
 
     ASSERT_TRUE(c.running());
@@ -899,9 +1030,9 @@ TEST_F(ControlTool, testJsonProperties)
     root = readJsonArray(reader_stream);
     ASSERT_TRUE(root.isObject());
 
-    EXPECT_EQ(root["name"].asString(), "main_clock");
-    EXPECT_EQ(root["type"].asString(), "string");
-    EXPECT_EQ(root["value"].asString(), "local_system_realtime");
+    EXPECT_EQ(root["value"]["participant_property"]["name"].asString(), "main_clock");
+    EXPECT_EQ(root["value"]["participant_property"]["type"].asString(), "string");
+    EXPECT_EQ(root["value"]["participant_property"]["value"].asString(), "local_system_realtime");
 }
 
 /**
@@ -932,8 +1063,8 @@ TEST_F(ControlTool, testJsonMonitoring_enableJSON)
     skipUntilPrompt(c, reader_stream);
     ASSERT_TRUE(ret.isObject());
     EXPECT_EQ(ret["action"].asString(), "enableJson");
-    EXPECT_EQ(ret["note"].asString(), "json_mode: enabled");
     EXPECT_EQ(ret["status"].asInt(), 0);
+    EXPECT_EQ(ret["value"]["note"].asString(), "json_mode: enabled");
 
     writer_stream << "discoverSystem " << _system_name << std::endl;
 
@@ -941,8 +1072,8 @@ TEST_F(ControlTool, testJsonMonitoring_enableJSON)
     skipUntilPrompt(c, reader_stream);
     ASSERT_TRUE(root.isObject());
     EXPECT_EQ(root["action"].asString(), "discoverSystem");
-    EXPECT_EQ(root["system name"].asString(), _system_name);
-    EXPECT_EQ(root["participants"].asString(), "test_part_0, test_part_1");
+    EXPECT_EQ(root["value"]["system_name"].asString(), _system_name);
+    EXPECT_EQ(root["value"]["participants"].asString(), "test_part_0, test_part_1");
 
     ASSERT_TRUE(c.running());
     writer_stream << "startMonitoringSystem " << _system_name << std::endl;
@@ -950,15 +1081,15 @@ TEST_F(ControlTool, testJsonMonitoring_enableJSON)
     skipUntilPrompt(c, reader_stream);
     ASSERT_TRUE(ret_monitoring.isObject());
     EXPECT_EQ(ret_monitoring["action"].asString(), "startMonitoringSystem");
-    EXPECT_EQ(ret_monitoring["note"].asString(), "monitoring: enabled");
     EXPECT_EQ(ret_monitoring["status"].asInt(), 0);
+    EXPECT_EQ(ret_monitoring["value"]["note"].asString(), "monitoring: enabled");
 
     writer_stream << "stopSystem " << _system_name << std::endl;
 
     const int num_expected_messages = 2;
     int message_count = 0;
 
-    while (message_count < num_expected_messages) {
+    for (int i = 0; i < num_expected_messages; ++i) {
         root = readJsonArray(reader_stream);
         ASSERT_TRUE(root.isObject());
         if ((root["log_type"].asString() == "message")) {
@@ -966,10 +1097,11 @@ TEST_F(ControlTool, testJsonMonitoring_enableJSON)
         }
 
         if ((root["action"].asString() == "stopSystem") &&
-            (root["note"].asString() == _system_name + " stopped")) {
+            (root["value"]["note"].asString() == _system_name + " stopped")) {
             message_count++;
         }
     }
+    EXPECT_EQ(message_count, num_expected_messages);
 
     ASSERT_TRUE(c.running());
     writer_stream << "stopMonitoringSystem " << _system_name << std::endl;
@@ -995,14 +1127,14 @@ TEST_F(ControlTool, testWriteNote)
     skipUntilPrompt(c, reader_stream);
 
     const auto path = a_util::filesystem::getWorkingDirectory() + "files";
-    writer_stream << "setCurrentWorkingDirectory " << quoteFilenameIfNecessary(path.toString())
+    writer_stream << "setCurrentWorkingDirectory " << quoteNameIfNecessary(path.toString())
                   << std::endl;
 
     const auto root = readJsonArray(reader_stream);
     ASSERT_TRUE(root.isObject());
 
     EXPECT_EQ(root["action"].asString(), "setCurrentWorkingDirectory");
-    EXPECT_EQ(root["working directory"].asString(), path);
+    EXPECT_EQ(root["value"]["working_directory"].asString(), path);
 }
 
 /**
@@ -1024,16 +1156,16 @@ TEST_F(ControlTool, testWriteError)
     skipUntilPrompt(c, reader_stream);
 
     const auto path = a_util::filesystem::getWorkingDirectory() + "file";
-    writer_stream << "setCurrentWorkingDirectory " << quoteFilenameIfNecessary(path.toString())
+    writer_stream << "setCurrentWorkingDirectory " << quoteNameIfNecessary(path.toString())
                   << std::endl;
 
     const auto root = readJsonArray(reader_stream);
     ASSERT_TRUE(root.isObject());
 
     EXPECT_EQ(root["action"].asString(), "setCurrentWorkingDirectory");
-    EXPECT_EQ(root["error"].asString(),
+    EXPECT_EQ(root["value"]["error"].asString(),
               "cannot set working directory to '" + path.toString() + "'");
-    EXPECT_EQ(root["reason"].asString(), "INVALID_PATH");
+    EXPECT_EQ(root["value"]["reason"].asString(), "INVALID_PATH");
 }
 
 /**
@@ -1061,16 +1193,17 @@ TEST_F(ControlTool, testWriteException)
     auto root = readJsonArray(reader_stream);
     skipUntilPrompt(c, reader_stream);
 
-    writer_stream << "getParticipantProperty " << _system_name << " test_part Clock/MainClock"
+    writer_stream << "getParticipantProperty " << _system_name << " test_part_0 Clock/MainClock"
                   << std::endl;
     root = readJsonArray(reader_stream);
     ASSERT_TRUE(root.isObject());
 
     EXPECT_EQ(root["action"].asString(), "getParticipantProperty");
-    EXPECT_EQ(root["exception"].asString(),
-              "cannot get property Clock/MainClock for participant 'test_part@" + _system_name +
+    EXPECT_EQ(root["value"]["exception"].asString(),
+              "cannot get property Clock/MainClock for participant 'test_part_0@" + _system_name +
                   "\'");
-    EXPECT_EQ(root["reason"].asString(), "No Participant with the name test_part found");
+    EXPECT_EQ(root["value"]["reason"].asString(), 
+              "Could not execute test_part_0->configuration->getProperties - Error: ERR_PATH_NOT_FOUND - Property 'Clock' does not exist.");
 }
 
 /**
@@ -1098,7 +1231,7 @@ TEST_F(ControlTool, testEnableDisableJsonMode)
 
     const std::vector<std::string> expected_answer = {
         _system_name, ":", "test_part_0,", "test_part_1"};
-    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer));
+    EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer)) << "discoverSystem when disableJson";
 
     // Check default getParticipantProperties
     writer_stream << "getParticipantProperties " << _system_name << " test_part_0" << std::endl;
@@ -1108,7 +1241,7 @@ TEST_F(ControlTool, testEnableDisableJsonMode)
     ASSERT_TRUE(std::getline(reader_stream, line));
     a_util::strings::trim(line);
     std::string expected_prefix = std::string("test_part_0 :");
-    ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0);
+    ASSERT_EQ(line.compare(0u, expected_prefix.size(), expected_prefix), 0) << "getParticipantProperties when disableJson";
     skipUntilPrompt(c, reader_stream);
 
     writer_stream << "enableJson" << std::endl;
@@ -1117,7 +1250,16 @@ TEST_F(ControlTool, testEnableDisableJsonMode)
     skipUntilPrompt(c, reader_stream);
     ASSERT_TRUE(root.isObject());
     EXPECT_EQ(root["action"].asString(), "enableJson");
-    EXPECT_EQ(root["note"].asString(), "json_mode: enabled");
+    EXPECT_EQ(root["value"]["note"].asString(), "json_mode: enabled") << "enableJson"; 
+
+    // Check JSON discoverAllSystems 
+    writer_stream << "discoverAllSystems" << std::endl;
+    root = readJsonArray(reader_stream);
+    skipUntilPrompt(c, reader_stream);
+    ASSERT_TRUE(root.isObject());
+    EXPECT_EQ(root["action"].asString(), "discoverAllSystems");
+    EXPECT_EQ(root["value"][0]["participants"].asString(), "test_part_0, test_part_1") << "discoverAllSystems when enableJson";
+    EXPECT_EQ(root["value"][0]["system_name"].asString(), _system_name) << "discoverAllSystems when enableJson";
 
     // Check JSON getParticipantProperties
     ASSERT_TRUE(c.running());
@@ -1127,11 +1269,11 @@ TEST_F(ControlTool, testEnableDisableJsonMode)
     skipUntilPrompt(c, reader_stream);
     ASSERT_TRUE(root.isObject());
 
-    EXPECT_EQ(root["participant_properties"][0]["name"].asString(), "logging");
-    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["name"].asString(),
+    EXPECT_EQ(root["value"]["participant_properties"][0]["name"].asString(), "logging");
+    EXPECT_EQ(root["value"]["participant_properties"][0]["sub_properties"][0]["name"].asString(),
               "default_sinks");
-    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["type"].asString(), "string");
-    EXPECT_EQ(root["participant_properties"][0]["sub_properties"][0]["value"].asString(),
+    EXPECT_EQ(root["value"]["participant_properties"][0]["sub_properties"][0]["type"].asString(), "string");
+    EXPECT_EQ(root["value"]["participant_properties"][0]["sub_properties"][0]["value"].asString(),
               "console,rpc");
 
     writer_stream << "disableJson" << std::endl;
@@ -1280,4 +1422,197 @@ TEST_F(ControlTool, testStartPriority)
     writer_stream << "getStartPriority " << _system_name << " test_part_1" << std::endl;
     const std::vector<std::string> expected_answer_read = {"priority", ":", "3"};
     EXPECT_TRUE(checkUntilPrompt(c, reader_stream, expected_answer_read));
+}
+
+/**
+ * @brief Test callRPC
+ */
+/**
+ * Test callRPC with an example RPC call
+ *
+ * @req_id          FEPSDK-2961
+ * @testData        FEP_SYSTEM
+ * @testType        positive test
+ * @precondition    none
+ * @postcondition   none
+ * @expectedResult  method returns expected results
+ */
+
+TEST_F(ControlTool, testRPC)
+{
+    TestParticipants test_parts;
+    ASSERT_TRUE(createSystem(test_parts, false));
+
+    bp::opstream writer_stream;
+    bp::ipstream reader_stream;
+
+    bp::child c(binary_tool_path, bp::std_out > reader_stream, bp::std_in < writer_stream);
+    skipUntilPrompt(c, reader_stream);
+
+    writer_stream << "discoverAllSystems" << std::endl;
+    std::string ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find(_system_name + ":test_part_0,test_part_1") != std::string::npos);
+
+    // test participant info 
+    //
+    // RPC Definition
+    //
+    // {                                           
+    //    "name": "getRPCServices",                   
+    //    "returns": "service1;service2"              
+    // },                                              
+    // {                                               
+    //     "name": "getRPCServiceIIDs",                
+    //     "params": {                                 
+    //         "rpc_service_name": "service1"          
+    //     },                                          
+    //     "returns": "iid1;iid2"                      
+    // },                                              
+    //
+    // {                                               
+    //     "name": "getName",                          
+    //     "returns": "participant_name"               
+    // }
+
+    const std::string object_name = "participant_info";
+    const std::string intf_name = "participant_info.arya.fep3.iid";
+    const std::string rpc_head = "callRPC " + _system_name + " test_part_0";
+    const std::string participant_info_rpc = rpc_head + " " + object_name + " "+ intf_name;
+
+    // succeed if RPC call without request arguments 
+    writer_stream << participant_info_rpc << " getName" << std::endl;
+    ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find("\"result\":\"test_part_0\"") != std::string::npos)
+        << "RPC call without request parameters fails";
+
+    // fail if RPC call with invalid RPC object name
+    const std::string invalid_rpc = rpc_head + " invalid_rpc_object " + intf_name + " getName";
+    writer_stream << invalid_rpc << std::endl;
+    ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_FALSE(ss.find("\"result\":\"test_part_0\"") != std::string::npos)
+        << "RPC call with invalid RPC object name fails";
+
+    // with parameters
+    
+    // succeed if RPC call with obselete request arguments 
+    std::string parameters = "{\"optional\":\"nothing\"}";
+    writer_stream << participant_info_rpc << " getName " << parameters << std::endl;
+    ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find("\"result\":\"test_part_0\"") != std::string::npos)
+        << "RPC call with obselet request arguments fails";
+
+    // succeed if RPC call with correct reqeust arguments 
+    parameters = "{\"rpc_service_name\":\"clock_service\"}";
+    const std::string participant_info_service_iids_rpc = participant_info_rpc + " getRPCServiceIIDs ";
+
+    writer_stream << participant_info_service_iids_rpc << parameters << std::endl;
+    ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find("\"result\":\"clock_service.arya.fep3.iid\"") != std::string::npos)
+        << "RPC call with correct request arguments fails";
+
+    // fail if RPC call with malformatted json string in request arguments
+    parameters = "{\"rpc_service_name\":\"clock_service}";
+    writer_stream << participant_info_service_iids_rpc << parameters << std::endl;
+    ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find("Syntaxerror") != std::string::npos)
+        << "RPC call with json malformatted json string in request arguments fails";
+
+    // test retrieving simulation time
+    //
+    // RPC Definition
+    //
+    // {
+    //      "name": "getTime",
+    //      "params": {
+    //          "clock_name": "name1"
+    //      },
+    //      "returns": "int64_time" //nanosec
+    // },
+    std::string get_time_rpc = rpc_head + " " + 
+        "clock_service " +
+        "clock_service.arya.fep3.iid " +
+        "getTime " + 
+        "{\"clock_name\":\"local_system_simtime\"}";
+
+
+    writer_stream << get_time_rpc << std::endl;
+    ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find("\"result\":\"0\"") != std::string::npos) 
+        << "RPC call to retrive simulation time fails";
+
+    // test changhing logging severity
+    //
+    // RPC Definition
+    //
+    // {
+    //     "name": "setLoggerFilter",
+    //     "params": {
+    //         "logger_name": "name",
+    //         "severity": 0,
+    //         "enable_sinks": "rpc,file,console"
+    //     },
+    //     "returns": 0 //sink creation error
+    // },
+    //
+    // {
+    //     "name": "getLoggerFilter",
+    //     "params": {
+    //         "logger_name": "name"
+    //     },
+    //     "returns": {
+    //         "severity": 0,
+    //         "enable_sinks": "rpc,file,console"
+    //     }
+    // },
+    //
+    // call getLoggerFilter
+    std::string get_logger_filter_rpc = rpc_head + " " +
+        "logging_service " +
+        "logging_service.arya.fep3.iid " +
+        "getLoggerFilter " + 
+        "{\"logger_name\":\"participant\"}";
+
+    writer_stream << get_logger_filter_rpc << std::endl;
+    ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find("\"severity\":0") != std::string::npos);
+
+    // call setLoggerFilter to set severity
+    std::string set_logger_filter_rpc = rpc_head + " " +
+        "logging_service " +
+        "logging_service.arya.fep3.iid " +
+        "setLoggerFilter " +
+        "{\"logger_name\":\"participant\",\"severity\":1,\"enable_sinks\":\"console\"}";
+
+    writer_stream << set_logger_filter_rpc << std::endl;
+    ss = getStreamUntilPromt(c, reader_stream);
+    writer_stream << get_logger_filter_rpc << std::endl;
+    ss = getStreamUntilPromt(c, reader_stream);
+    EXPECT_TRUE(ss.find("\"severity\":1") != std::string::npos) 
+        << "RPC call to set logger severity fails";
+
+    closeSession(c, writer_stream);
+}
+
+TEST(ControlToolCommonHelper, quoteNameIfNecessary)
+{
+    EXPECT_EQ(quoteNameIfNecessary(""), "\"\"");
+    EXPECT_EQ(quoteNameIfNecessary("a"), "a");
+    EXPECT_EQ(quoteNameIfNecessary("nothing_Special"), "nothing_Special");
+    EXPECT_EQ(quoteNameIfNecessary("having space"), "\"having space\"");
+
+    EXPECT_EQ(quoteNameIfNecessary("\""), "\\\"");
+    EXPECT_EQ(quoteNameIfNecessary("\"abc"), "\\\"abc");
+    EXPECT_EQ(quoteNameIfNecessary("abc\""), "abc\\\"");
+    EXPECT_EQ(quoteNameIfNecessary("x\"y"), "x\\\"y");
+
+    EXPECT_EQ(quoteNameIfNecessary("\\"), "\\\\");
+    EXPECT_EQ(quoteNameIfNecessary("\\abc"), "\\\\abc");
+    EXPECT_EQ(quoteNameIfNecessary("abc\\"), "abc\\\\");
+    EXPECT_EQ(quoteNameIfNecessary("x\\y"), "x\\\\y");
+
+    EXPECT_EQ(quoteNameIfNecessary("\"x\\y\""), "\\\"x\\\\y\\\"");
+
+    EXPECT_EQ(quoteNameIfNecessary("\"x y\\"), "\"\\\"x y\\\\\"");
+
+    EXPECT_EQ(quoteNameIfNecessary("C:\\Program Files (x86)\\"), "\"C:\\\\Program Files (x86)\\\\\"");
 }
