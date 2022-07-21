@@ -130,7 +130,7 @@ bool ControlToolTestSystem::checkParticipantsUnloaded()
                 participants_unloaded.push_back(false);
             }
         }
-        catch (const std::exception& e) {
+        catch (const std::exception&) {
             // means participant is not yet there
             participants_unloaded.push_back(false);
         }

@@ -45,6 +45,17 @@ add_executable(${FEP_CONTROL_TOOL}
     monitor.cpp
 )
 
+if (MSVC)
+    # Ignore warnings coming from linenoise
+    set_source_files_properties(
+        linenoise/linenoise.h
+        linenoise/linenoise.c
+        linenoise_wrapper.cpp
+      PROPERTIES
+      COMPILE_FLAGS "/wd4267 /wd4996 /wd4244 /wd4456"
+    )
+endif()
+
 target_link_libraries(${FEP_CONTROL_TOOL}
     PUBLIC fep3_system
     PRIVATE dev_essential::pkg_rpc

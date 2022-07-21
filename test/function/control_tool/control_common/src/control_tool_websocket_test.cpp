@@ -27,7 +27,7 @@ testing::AssertionResult ControlToolWebsocket::testSystemHandling(ControlToolCli
 {
     const auto test_files_path = a_util::filesystem::getWorkingDirectory() + "files";
     std::string set_working_directory_command =
-        "setCurrentWorkingDirectory " + quoteFilenameIfNecessary(test_files_path.toString());
+        "setCurrentWorkingDirectory " + quoteNameIfNecessary(test_files_path.toString());
 
     client.connectWebsocket();
     try {

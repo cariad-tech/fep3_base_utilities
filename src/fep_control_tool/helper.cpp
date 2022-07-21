@@ -18,6 +18,7 @@ You may add additional accurate notices of copyright ownership.
  */
 
 #include "helper.h"
+#include "control_tool_common_helper.h"
 
 #include <algorithm>
 #include <cctype>
@@ -135,14 +136,21 @@ std::string resolveSystemState(const fep3::System::AggregatedState st)
     return "NOT RESOLVABLE";
 }
 
-std::vector<std::string> parseLine(const std::string& line)
+std::vector<std::string> parseLine(const std::string& line, bool add_empty)
 {
     const char* p = line.c_str();
-    std::vector<std::string> words(1);
-    while (getNextWord(p, words.back())) {
+    std::vector<std::string> words;
+    std::string word;
+    const char* last_p = p;
+    while (getNextWord(p, word))
+    {
+        words.push_back(unEscape(word));
+        last_p = p;
+    }
+    if (add_empty && last_p != p)
+    {
         words.emplace_back();
     }
-    words.pop_back();
     return words;
 }
 

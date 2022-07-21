@@ -197,8 +197,8 @@ void interactiveLoopCLI(bool json_mode)
     while (!shutdown_requested) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    for (const auto& instance: instances) {
-        instance->writeShutdownMessage();
+    for (const auto& instance_p: instances) {
+        instance_p->writeShutdownMessage();
     }
 }
 

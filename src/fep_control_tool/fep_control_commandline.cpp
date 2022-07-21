@@ -19,6 +19,8 @@ You may add additional accurate notices of copyright ownership.
 
 #include "fep_control_commandline.h"
 
+#include "control_tool_common_helper.h"
+
 #include "helper.h"
 #include "linenoise_wrapper.h"
 
@@ -48,15 +50,11 @@ std::vector<std::string> FepControlCommandLine::commandNameCompletion(
 
 std::vector<std::string> FepControlCommandLine::commandCompletion(const std::string& input)
 {
-    std::vector<std::string> input_tokens = parseLine(input);
+    std::vector<std::string> input_tokens = parseLine(input, true);
     std::vector<std::string> completions;
 
-    if (input_tokens.empty() || std::isspace(input.back())) {
-        input_tokens.emplace_back();
-    }
-
     if (input_tokens.size() == 1u) {
-        return commandNameCompletion(input_tokens[0]);
+        return commandNameCompletion(quoteNameIfNecessary(input_tokens[0]));
     }
     else {
         auto it = findCommand(input_tokens[0]);
@@ -68,9 +66,13 @@ std::vector<std::string> FepControlCommandLine::commandCompletion(const std::str
                 auto exec = completion_list();
                 if (!exec.empty()) {
                     input_tokens.pop_back();
+                    for (auto token_it = input_tokens.begin(); token_it != input_tokens.end(); ++token_it)
+                    {
+                        *token_it = quoteNameIfNecessary(*token_it);
+                    }
                     std::string command_prefix = a_util::strings::join(input_tokens, " ") + " ";
                     for (const std::string& word_completion: exec) {
-                        completions.push_back(command_prefix + word_completion);
+                        completions.push_back(command_prefix + quoteNameIfNecessary(word_completion));
                     }
                     return completions;
                 }

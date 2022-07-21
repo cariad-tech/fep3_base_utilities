@@ -39,7 +39,7 @@ private:
     Json::StreamWriterBuilder _builder;
 };
 
-std::vector<std::string> parseLine(const std::string& line);
+std::vector<std::string> parseLine(const std::string& line, bool add_empty = false);
 
 std::string resolveSystemState(const fep3::System::AggregatedState st);
 

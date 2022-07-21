@@ -22,12 +22,49 @@ You may add additional accurate notices of copyright ownership.
 #include <cctype>
 #include <string>
 
-static std::string quoteFilenameIfNecessary(const std::string& file_name)
+inline std::string quoteNameIfNecessary(const std::string& name)
 {
-    assert(!file_name.empty());
-    if (file_name[0] == '"' ||
-        std::find_if(file_name.begin(), file_name.end(), isspace) == file_name.end()) {
-        return file_name;
+    bool need_quotes = name.empty() || std::find_if(name.begin(), name.end(), isspace) != name.end();
+    bool need_backslash = std::find_if(name.begin(), name.end(), [](char c) { return c == '"' || c == '\\'; }) != name.end();
+    if (!need_quotes && !need_backslash)
+    {
+        return name;
     }
-    return "\"" + file_name + "\"";
+    std::string quoted_name = need_quotes ? "\"" : "";
+    for (auto c : name)
+    {
+        if (c == '"' || c == '\\')
+        {
+            quoted_name += '\\';
+        }
+        quoted_name += c;
+    }
+    if (need_quotes)
+    {
+        quoted_name += '"';
+    }
+    return quoted_name;
+}
+
+inline std::string unEscape(const std::string& name)
+{
+    std::string unescaped;
+    bool escape_active = false;
+    for (char c : name)
+    {
+        if (escape_active || c != '\\')
+        {
+            unescaped += c;
+            escape_active = false;
+        }
+        else // !escape_activ && ec == '\\'
+        {
+            escape_active = true;
+        }
+    }
+    if (escape_active)
+    {
+        unescaped += '\\';
+    }
+    return unescaped;
 }

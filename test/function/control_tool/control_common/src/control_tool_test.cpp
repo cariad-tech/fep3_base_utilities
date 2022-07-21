@@ -109,8 +109,7 @@ std::vector<Json::Value> ControlTool::readJsonArray(const std::string& in_json_s
     a_util::strings::trim(json_string);
 
     std::string delim = "}";
-    Json::Value root;
-    auto start = 0U;
+    size_t start = 0;
     auto end = json_string.find(delim);
 
     Json::CharReaderBuilder readerBuilder;
